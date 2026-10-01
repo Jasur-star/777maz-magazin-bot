@@ -138,7 +138,7 @@ async def cart(call: CallbackQuery):
 @dp.callback_query(F.data == "contact")
 async def contact(call: CallbackQuery):
     await call.message.edit_text(
-        "📞 Aloqa\n\nTelefon: +998 XX XXX XX XX\n📍 Manzil: keyin qo‘shamiz.",
+        📞 Aloqa\n\nTelefon: +998 99 690 24 07\n📍 Manzil: Mirzo Ulug‘bek tumani, Mirzo Ulug‘bek ko‘chasi, 107-uy, 1-xonadon
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🏠 Bosh menyu", callback_data="home")]
         ])
