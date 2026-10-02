@@ -1,6 +1,5 @@
 import os
 import sqlite3
-import asyncio
 from datetime import datetime
 
 from aiohttp import web
@@ -33,10 +32,18 @@ bot = Bot(TOKEN)
 dp = Dispatcher()
 
 DB_NAME = "shop.db"
-
-# Buyurtmalar kimga yuborilishi uchun:
-# Render Environment Variables ichida ADMIN_ID qo'yiladi.
 ADMIN_ID = os.getenv("ADMIN_ID")
+
+# KATALOG KATEGORIYALARI
+CATEGORIES = [
+    ("🥤", "Ichimliklar"),
+    ("🍫", "Shirinliklar"),
+    ("🍎", "Mevalar"),
+    ("🥕", "Sabzavotlar"),
+    ("👶", "Bolalar ovqati"),
+    ("🍳", "Oshxona mahsulotlari"),
+    ("🧴", "Gellar va shampunlar"),
+]
 
 
 # =========================
@@ -55,9 +62,19 @@ def init_db():
         CREATE TABLE IF NOT EXISTS products (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
-            price INTEGER NOT NULL
+            price INTEGER NOT NULL,
+            category TEXT DEFAULT 'Oshxona mahsulotlari'
         )
     """)
+
+    # Eski shop.db bo'lsa, category ustunini qo'shamiz
+    cur.execute("PRAGMA table_info(products)")
+    columns = [row[1] for row in cur.fetchall()]
+
+    if "category" not in columns:
+        cur.execute(
+            "ALTER TABLE products ADD COLUMN category TEXT DEFAULT 'Oshxona mahsulotlari'"
+        )
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS cart (
@@ -87,6 +104,10 @@ def init_db():
 
 
 def seed_products():
+    """
+    Birinchi marta baza bo'sh bo'lsa, vaqtinchalik namunaviy mahsulotlar qo'shiladi.
+    Keyinchalik ularni o'zgartirish yoki ko'paytirish mumkin.
+    """
     db = get_db()
     cur = db.cursor()
 
@@ -95,14 +116,17 @@ def seed_products():
 
     if count == 0:
         products = [
-            ("Non", 5000),
-            ("Sut 1 litr", 10000),
-            ("Shakar 1 kg", 12000),
-            ("Choy", 18000),
+            ("Sut 1 litr", 10000, "Ichimliklar"),
+            ("Choy", 18000, "Ichimliklar"),
+            ("Shakar 1 kg", 12000, "Shirinliklar"),
+            ("Non", 5000, "Oshxona mahsulotlari"),
         ]
 
         cur.executemany(
-            "INSERT INTO products (name, price) VALUES (?, ?)",
+            """
+            INSERT INTO products (name, price, category)
+            VALUES (?, ?, ?)
+            """,
             products
         )
 
@@ -111,7 +135,7 @@ def seed_products():
 
 
 # =========================
-# KLAVIATURA
+# KLAVIATURALAR
 # =========================
 
 def main_menu():
@@ -156,13 +180,49 @@ def back_home():
     ])
 
 
-def products_keyboard():
+def catalog_keyboard():
+    buttons = []
+
+    for emoji, name in CATEGORIES:
+        buttons.append([
+            InlineKeyboardButton(
+                text=f"{emoji} {name}",
+                callback_data=f"category:{name}"
+            )
+        ])
+
+    buttons.append([
+        InlineKeyboardButton(
+            text="🛒 Savat",
+            callback_data="cart"
+        )
+    ])
+
+    buttons.append([
+        InlineKeyboardButton(
+            text="🏠 Bosh menyu",
+            callback_data="home"
+        )
+    ])
+
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def products_keyboard(category):
     db = get_db()
     cur = db.cursor()
 
-    cur.execute("SELECT id, name, price FROM products")
-    products = cur.fetchall()
+    cur.execute(
+        """
+        SELECT id, name, price
+        FROM products
+        WHERE category = ?
+        ORDER BY id
+        """,
+        (category,)
+    )
 
+    products = cur.fetchall()
     db.close()
 
     buttons = []
@@ -174,6 +234,13 @@ def products_keyboard():
                 callback_data=f"add_to_cart:{product_id}"
             )
         ])
+
+    buttons.append([
+        InlineKeyboardButton(
+            text="⬅️ Kategoriyalar",
+            callback_data="products"
+        )
+    ])
 
     buttons.append([
         InlineKeyboardButton(
@@ -246,17 +313,52 @@ async def start(message: Message):
 
 
 # =========================
-# MAHSULOTLAR
+# MAHSULOTLAR / KATALOG
 # =========================
 
 @dp.callback_query(F.data == "products")
 async def products_callback(callback: CallbackQuery):
     await callback.message.edit_text(
-        "🛍 Mahsulotlar:\n\n"
-        "Kerakli mahsulotni tanlang:",
-        reply_markup=products_keyboard()
+        "🛍 MAHSULOTLAR KATALOGI\n\n"
+        "Kerakli bo‘limni tanlang:",
+        reply_markup=catalog_keyboard()
     )
+    await callback.answer()
 
+
+# =========================
+# KATEGORIYA ICHIGA KIRISH
+# =========================
+
+@dp.callback_query(F.data.startswith("category:"))
+async def category_callback(callback: CallbackQuery):
+    category = callback.data.split(":", 1)[1]
+
+    db = get_db()
+    cur = db.cursor()
+
+    cur.execute(
+        "SELECT COUNT(*) FROM products WHERE category = ?",
+        (category,)
+    )
+    count = cur.fetchone()[0]
+    db.close()
+
+    if count == 0:
+        text = (
+            f"{category}\n\n"
+            "📭 Bu bo‘limda hozircha mahsulotlar yo‘q."
+        )
+    else:
+        text = (
+            f"{category}\n\n"
+            "Mahsulotni tanlang:"
+        )
+
+    await callback.message.edit_text(
+        text,
+        reply_markup=products_keyboard(category)
+    )
     await callback.answer()
 
 
@@ -281,13 +383,20 @@ async def add_to_cart(callback: CallbackQuery):
 
     if not product:
         db.close()
-        await callback.answer("Mahsulot topilmadi", show_alert=True)
+        await callback.answer(
+            "Mahsulot topilmadi",
+            show_alert=True
+        )
         return
 
     name, price = product
 
     cur.execute(
-        "SELECT quantity FROM cart WHERE user_id = ? AND product_id = ?",
+        """
+        SELECT quantity
+        FROM cart
+        WHERE user_id = ? AND product_id = ?
+        """,
         (user_id, product_id)
     )
 
@@ -349,7 +458,6 @@ async def cart_callback(callback: CallbackQuery):
         return
 
     text = "🛒 SIZNING SAVATINGIZ\n\n"
-
     total = 0
 
     for name, price, quantity in items:
@@ -507,7 +615,6 @@ async def order_messages(message: Message):
             "Pastdagi tugmani bosishingiz mumkin.",
             reply_markup=phone_keyboard()
         )
-
         return
 
     # TELEFON
@@ -534,7 +641,6 @@ async def order_messages(message: Message):
                 resize_keyboard=True
             )
         )
-
         return
 
     # MANZIL
@@ -578,7 +684,7 @@ async def order_messages(message: Message):
 
             items_text += (
                 f"• {name} — {quantity} dona\n"
-                f"  {summa:,} so'm\n"
+                f"  {summa:,} so‘m\n"
             )
 
         state["items"] = items_text
@@ -590,11 +696,10 @@ async def order_messages(message: Message):
             f"📞 Telefon: {state['phone']}\n"
             f"📍 Manzil: {state['address']}\n\n"
             f"🛍 Mahsulotlar:\n{items_text}\n"
-            f"💰 Jami: {total:,} so'm\n\n"
+            f"💰 Jami: {total:,} so‘m\n\n"
             "Buyurtmani tasdiqlaysizmi?",
             reply_markup=confirm_order_keyboard()
         )
-
         return
 
 
@@ -637,7 +742,6 @@ async def confirm_order(callback: CallbackQuery):
 
     order_id = cur.lastrowid
 
-    # Savatni tozalash
     cur.execute(
         "DELETE FROM cart WHERE user_id = ?",
         (user_id,)
@@ -646,19 +750,16 @@ async def confirm_order(callback: CallbackQuery):
     db.commit()
     db.close()
 
-    # Holatni o‘chirish
     order_states.pop(user_id, None)
 
-    # Foydalanuvchiga
     await callback.message.answer(
         "✅ BUYURTMANGIZ QABUL QILINDI!\n\n"
         f"📦 Buyurtma №{order_id}\n"
-        f"💰 Jami: {state['total']:,} so'm\n\n"
+        f"💰 Jami: {state['total']:,} so‘m\n\n"
         "Tez orada siz bilan bog‘lanamiz.",
         reply_markup=main_menu()
     )
 
-    # ADMIN ga yuborish
     if ADMIN_ID:
         try:
             await bot.send_message(
@@ -669,7 +770,7 @@ async def confirm_order(callback: CallbackQuery):
                 f"📞 Telefon: {state['phone']}\n"
                 f"📍 Manzil: {state['address']}\n\n"
                 f"🛍 Mahsulotlar:\n{state['items']}\n"
-                f"💰 Jami: {state['total']:,} so'm\n\n"
+                f"💰 Jami: {state['total']:,} so‘m\n\n"
                 f"🕐 {created_at}"
             )
         except Exception as e:
@@ -731,7 +832,7 @@ async def orders_callback(callback: CallbackQuery):
     for order_id, total, status, created_at in orders:
         text += (
             f"№{order_id}\n"
-            f"💰 {total:,} so'm\n"
+            f"💰 {total:,} so‘m\n"
             f"📌 Holat: {status}\n"
             f"🕐 {created_at}\n\n"
         )
@@ -835,9 +936,7 @@ async def on_startup(app):
 
     await bot.set_webhook(webhook_url)
 
-    print(
-        f"Webhook set: {webhook_url}"
-    )
+    print(f"Webhook set: {webhook_url}")
 
 
 # =========================
@@ -875,13 +974,8 @@ def create_app():
         webhook
     )
 
-    app.on_startup.append(
-        on_startup
-    )
-
-    app.on_cleanup.append(
-        on_cleanup
-    )
+    app.on_startup.append(on_startup)
+    app.on_cleanup.append(on_cleanup)
 
     return app
 
