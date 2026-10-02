@@ -4,7 +4,7 @@ from datetime import datetime
 
 from aiohttp import web
 from aiogram import Bot, Dispatcher, F
-from aiogram.filters import CommandStart
+from aiogram.filters import Command, CommandStart
 from aiogram.types import (
     Message,
     CallbackQuery,
@@ -32,7 +32,7 @@ bot = Bot(TOKEN)
 dp = Dispatcher()
 
 DB_NAME = "shop.db"
-ADMIN_ID = os.getenv("ADMIN_ID")
+ADMIN_ID = os.getenv("ADMIN_ID", "8082110485")
 
 # KATALOG KATEGORIYALARI
 CATEGORIES = [
@@ -63,7 +63,8 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             price INTEGER NOT NULL,
-            category TEXT DEFAULT 'Oshxona mahsulotlari'
+            category TEXT DEFAULT 'Oshxona mahsulotlari',
+            photo_id TEXT
         )
     """)
 
@@ -75,6 +76,9 @@ def init_db():
         cur.execute(
             "ALTER TABLE products ADD COLUMN category TEXT DEFAULT 'Oshxona mahsulotlari'"
         )
+
+    if "photo_id" not in columns:
+        cur.execute("ALTER TABLE products ADD COLUMN photo_id TEXT")
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS cart (
@@ -231,7 +235,7 @@ def products_keyboard(category):
         buttons.append([
             InlineKeyboardButton(
                 text=f"{name} — {price:,} so'm",
-                callback_data=f"add_to_cart:{product_id}"
+                callback_data=f"product:{product_id}"
             )
         ])
 
@@ -296,6 +300,230 @@ def phone_keyboard():
 # =========================
 
 order_states = {}
+admin_states = {}
+
+
+# =========================
+# ADMIN PANEL
+# =========================
+
+def is_admin(user_id: int) -> bool:
+    return bool(ADMIN_ID) and str(user_id) == str(ADMIN_ID)
+
+
+def admin_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➕ Mahsulot qo‘shish", callback_data="admin_add")],
+        [InlineKeyboardButton(text="📋 Mahsulotlar ro‘yxati", callback_data="admin_list")],
+        [InlineKeyboardButton(text="🗑 Mahsulot o‘chirish", callback_data="admin_delete")],
+    ])
+
+
+def admin_category_keyboard():
+    rows = []
+    for emoji, name in CATEGORIES:
+        rows.append([
+            InlineKeyboardButton(
+                text=f"{emoji} {name}",
+                callback_data=f"admin_cat:{name}"
+            )
+        ])
+    rows.append([InlineKeyboardButton(text="❌ Bekor qilish", callback_data="admin_cancel")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+@dp.message(Command("admin"))
+async def admin_command(message: Message):
+    if not ADMIN_ID:
+        await message.answer(
+            "⚠️ Admin ID sozlanmagan. Render → Environment → ADMIN_ID ga Telegram ID ni kiriting."
+        )
+        return
+
+    if not is_admin(message.from_user.id):
+        await message.answer("⛔ Sizda admin huquqi yo‘q.")
+        return
+    await message.answer(
+        "⚙️ ADMIN PANEL\n\nKerakli amalni tanlang:",
+        reply_markup=admin_keyboard()
+    )
+
+
+@dp.callback_query(F.data == "admin_add")
+async def admin_add(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Ruxsat yo‘q", show_alert=True)
+        return
+    admin_states[callback.from_user.id] = {"step": "name"}
+    await callback.message.answer("➕ Yangi mahsulot nomini yozing:")
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "admin_list")
+async def admin_list(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Ruxsat yo‘q", show_alert=True)
+        return
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT id, name, price, category, photo_id FROM products ORDER BY id DESC")
+    products = cur.fetchall()
+    db.close()
+    if not products:
+        text = "📋 Hozircha mahsulotlar yo‘q."
+    else:
+        text = "📋 MAHSULOTLAR\n\n"
+        for pid, name, price, category, photo_id in products:
+            photo_mark = "📷" if photo_id else "🖼️ yo‘q"
+            text += f"#{pid} • {name} — {price:,} so‘m\n   {category} • {photo_mark}\n\n"
+    await callback.message.answer(text, reply_markup=admin_keyboard())
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "admin_delete")
+async def admin_delete(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Ruxsat yo‘q", show_alert=True)
+        return
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT id, name, price FROM products ORDER BY id DESC")
+    products = cur.fetchall()
+    db.close()
+    if not products:
+        await callback.answer("Mahsulotlar yo‘q", show_alert=True)
+        return
+    buttons = []
+    for pid, name, price in products:
+        buttons.append([
+            InlineKeyboardButton(
+                text=f"🗑 {name} — {price:,} so‘m",
+                callback_data=f"admin_del:{pid}"
+            )
+        ])
+    buttons.append([InlineKeyboardButton(text="⚙️ Admin panel", callback_data="admin_panel")])
+    await callback.message.answer(
+        "🗑 O‘chirmoqchi bo‘lgan mahsulotni tanlang:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("admin_del:"))
+async def admin_del(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Ruxsat yo‘q", show_alert=True)
+        return
+    product_id = int(callback.data.split(":", 1)[1])
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT name FROM products WHERE id = ?", (product_id,))
+    row = cur.fetchone()
+    if not row:
+        db.close()
+        await callback.answer("Mahsulot topilmadi", show_alert=True)
+        return
+    name = row[0]
+    cur.execute("DELETE FROM cart WHERE product_id = ?", (product_id,))
+    cur.execute("DELETE FROM products WHERE id = ?", (product_id,))
+    db.commit()
+    db.close()
+    await callback.message.answer(f"✅ {name} o‘chirildi.", reply_markup=admin_keyboard())
+    await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("admin_cat:"))
+async def admin_category(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Ruxsat yo‘q", show_alert=True)
+        return
+
+    user_id = callback.from_user.id
+    state = admin_states.get(user_id)
+
+    if not state or state.get("step") != "category":
+        await callback.answer(
+            "Mahsulot qo‘shish jarayoni topilmadi",
+            show_alert=True
+        )
+        return
+
+    category = callback.data.split(":", 1)[1]
+    state["category"] = category
+    state["step"] = "photo"
+
+    await callback.message.answer(
+        "📷 Endi mahsulot rasmini yuboring.\n\n"
+        "Rasmni oddiy foto sifatida yuboring."
+    )
+    await callback.answer()
+
+
+@dp.message(F.photo)
+async def admin_product_photo(message: Message):
+    user_id = message.from_user.id
+
+    if not is_admin(user_id) or user_id not in admin_states:
+        return
+
+    state = admin_states[user_id]
+
+    if state.get("step") != "photo":
+        return
+
+    state["photo_id"] = message.photo[-1].file_id
+
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        """
+        INSERT INTO products (name, price, category, photo_id)
+        VALUES (?, ?, ?, ?)
+        """,
+        (
+            state["name"],
+            state["price"],
+            state["category"],
+            state["photo_id"]
+        )
+    )
+    db.commit()
+    db.close()
+
+    await message.answer_photo(
+        state["photo_id"],
+        caption=(
+            "✅ Mahsulot qo‘shildi!\n\n"
+            f"🛍 {state['name']}\n"
+            f"💰 {state['price']:,} so‘m\n"
+            f"📂 {state['category']}"
+        )
+    )
+
+    admin_states.pop(user_id, None)
+    await message.answer(
+        "⚙️ Admin panel:",
+        reply_markup=admin_keyboard()
+    )
+
+
+@dp.callback_query(F.data == "admin_panel")
+async def admin_panel(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Ruxsat yo‘q", show_alert=True)
+        return
+    await callback.message.answer("⚙️ ADMIN PANEL", reply_markup=admin_keyboard())
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "admin_cancel")
+async def admin_cancel(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Ruxsat yo‘q", show_alert=True)
+        return
+    admin_states.pop(callback.from_user.id, None)
+    await callback.message.answer("❌ Bekor qilindi.", reply_markup=admin_keyboard())
+    await callback.answer()
 
 
 # =========================
@@ -363,6 +591,59 @@ async def category_callback(callback: CallbackQuery):
 
 
 # =========================
+# MAHSULOT RASMI / MA'LUMOTI
+# =========================
+
+@dp.callback_query(F.data.startswith("product:"))
+async def product_detail(callback: CallbackQuery):
+    product_id = int(callback.data.split(":", 1)[1])
+
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        "SELECT name, price, category, photo_id FROM products WHERE id = ?",
+        (product_id,)
+    )
+    product = cur.fetchone()
+    db.close()
+
+    if not product:
+        await callback.answer("Mahsulot topilmadi", show_alert=True)
+        return
+
+    name, price, category, photo_id = product
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🛒 Savatga qo‘shish", callback_data=f"add_to_cart:{product_id}")],
+        [InlineKeyboardButton(text="⬅️ Kategoriyaga qaytish", callback_data=f"category:{category}")],
+        [InlineKeyboardButton(text="🏠 Bosh menyu", callback_data="home")]
+    ])
+
+    caption = (
+        f"🛍 {name}\n\n"
+        f"💰 Narxi: {price:,} so‘m\n"
+        f"📂 {category}"
+    )
+
+    try:
+        if photo_id:
+            await callback.message.answer_photo(
+                photo_id,
+                caption=caption,
+                reply_markup=keyboard
+            )
+        else:
+            await callback.message.answer(
+                caption + "\n\n📷 Rasm hozircha mavjud emas.",
+                reply_markup=keyboard
+            )
+    except Exception as e:
+        print("Mahsulot rasmi yuborilmadi:", e)
+        await callback.message.answer(caption, reply_markup=keyboard)
+
+    await callback.answer()
+
+
+# =========================
 # SAVATGA QO‘SHISH
 # =========================
 
@@ -375,7 +656,7 @@ async def add_to_cart(callback: CallbackQuery):
     cur = db.cursor()
 
     cur.execute(
-        "SELECT name, price FROM products WHERE id = ?",
+        "SELECT name, price, photo_id FROM products WHERE id = ?",
         (product_id,)
     )
 
@@ -389,7 +670,7 @@ async def add_to_cart(callback: CallbackQuery):
         )
         return
 
-    name, price = product
+    name, price, photo_id = product
 
     cur.execute(
         """
@@ -583,6 +864,31 @@ async def contact_received(message: Message):
 @dp.message()
 async def order_messages(message: Message):
     user_id = message.from_user.id
+
+    # ADMIN MAHSULOT QO‘SHISH JARAYONI
+    if is_admin(user_id) and user_id in admin_states:
+        state = admin_states[user_id]
+        text = (message.text or "").strip()
+        if state["step"] == "name":
+            if len(text) < 2:
+                await message.answer("Mahsulot nomini to‘liqroq yozing:")
+                return
+            state["name"] = text
+            state["step"] = "price"
+            await message.answer("💰 Mahsulot narxini faqat raqamda yozing. Masalan: 15000")
+            return
+        if state["step"] == "price":
+            price_text = text.replace(" ", "").replace(",", "")
+            if not price_text.isdigit() or int(price_text) <= 0:
+                await message.answer("❗ Narxni faqat raqamda yozing. Masalan: 15000")
+                return
+            state["price"] = int(price_text)
+            state["step"] = "category"
+            await message.answer("📂 Kategoriyani tanlang:", reply_markup=admin_category_keyboard())
+            return
+        if state["step"] == "category":
+            await message.answer("📂 Iltimos, pastdagi kategoriyalardan birini tanlang.", reply_markup=admin_category_keyboard())
+            return
 
     if user_id not in order_states:
         return
