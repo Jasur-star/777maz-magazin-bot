@@ -1,0 +1,45 @@
+<!doctype html><html lang="uz"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>777MAZ Market</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:#f6f7f9;color:#171717}
+header{background:#fff;padding:18px 16px 12px;position:sticky;top:0;z-index:5;border-bottom:1px solid #eee}
+.logo{font-size:25px;font-weight:800}.sub{color:#777;font-size:13px;margin-top:3px}
+.search{margin-top:14px;background:#f1f2f4;border-radius:14px;padding:12px 14px;border:0;width:100%;font-size:16px;outline:none}
+.container{padding:16px;max-width:900px;margin:auto}h2{font-size:20px;margin:8px 0 12px}
+.categories{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}.cat{background:#fff;border:1px solid #eee;border-radius:14px;padding:13px 7px;text-align:center;cursor:pointer;font-size:12px}.cat b{display:block;font-size:24px;margin-bottom:6px}
+.products{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.card{background:#fff;border-radius:16px;padding:10px;box-shadow:0 2px 10px #00000008}
+.pic{height:150px;border-radius:12px;background:#f1f2f4;display:flex;align-items:center;justify-content:center;font-size:52px}
+.name{font-weight:700;margin-top:9px;line-height:1.2}.price{font-weight:800;margin-top:6px}button{border:0;border-radius:11px;padding:10px 12px;cursor:pointer}
+.add{width:100%;margin-top:9px;background:#111;color:#fff;font-weight:700}.cart{position:fixed;right:16px;bottom:18px;background:#111;color:#fff;border-radius:25px;padding:14px 18px;font-weight:700;box-shadow:0 5px 20px #0003}
+@media(max-width:520px){.categories{grid-template-columns:repeat(3,1fr)}}
+</style></head><body>
+<header><div class="logo">777MAZ Market</div><div class="sub">Sifatli mahsulotlar — qulay xarid</div>
+<input id="search" class="search" placeholder="🔎 Mahsulot izlash..." oninput="render()"></header>
+<main class="container"><h2>Kategoriyalar</h2><div class="categories">
+<div class="cat" onclick="setCat('Ichimliklar')"><b>🥤</b>Ichimliklar</div>
+<div class="cat" onclick="setCat('Shirinliklar')"><b>🍫</b>Shirinliklar</div>
+<div class="cat" onclick="setCat('Mevalar')"><b>🍎</b>Mevalar</div>
+<div class="cat" onclick="setCat('Sabzavotlar')"><b>🥕</b>Sabzavotlar</div>
+<div class="cat" onclick="setCat('Bolalar ovqati')"><b>👶</b>Bolalar</div>
+<div class="cat" onclick="setCat('Oshxona mahsulotlari')"><b>🍳</b>Oshxona</div>
+<div class="cat" onclick="setCat('Gellar va shampunlar')"><b>🧴</b>Gellar</div>
+<div class="cat" onclick="setCat('')"><b>🛍️</b>Barchasi</div>
+</div><h2 style="margin-top:22px">Mahsulotlar</h2><div id="products" class="products"></div></main>
+<button class="cart" onclick="openCart()">🛒 Savat <span id="count">0</span></button>
+<script>
+const products=[
+{id:1,name:'Sut 1 litr',price:10000,cat:'Ichimliklar',emoji:'🥛'},
+{id:2,name:'Choy',price:18000,cat:'Ichimliklar',emoji:'🍵'},
+{id:3,name:'Shakar 1 kg',price:12000,cat:'Shirinliklar',emoji:'🍬'},
+{id:4,name:'Non',price:5000,cat:'Oshxona mahsulotlari',emoji:'🍞'},
+{id:5,name:'Coca-Cola 0.5 L',price:8000,cat:'Ichimliklar',emoji:'🥤'},
+{id:6,name:'Fanta 0.5 L',price:8000,cat:'Ichimliklar',emoji:'🧃'}];
+let category='',cart={};
+function setCat(c){category=c;render()} function money(n){return n.toLocaleString('uz-UZ')+' so‘m'}
+function render(){const q=document.getElementById('search').value.toLowerCase();const list=products.filter(p=>(!category||p.cat===category)&&p.name.toLowerCase().includes(q));
+document.getElementById('products').innerHTML=list.map(p=>`<div class="card"><div class="pic">${p.emoji}</div><div class="name">${p.name}</div><div class="price">${money(p.price)}</div><button class="add" onclick="add(${p.id})">🛒 Savatga</button></div>`).join('')||'<div>Mahsulot topilmadi.</div>'}
+function add(id){cart[id]=(cart[id]||0)+1;updateCount()} function updateCount(){document.getElementById('count').textContent=Object.values(cart).reduce((a,b)=>a+b,0)}
+function openCart(){let rows=Object.entries(cart).map(([id,n])=>{let p=products.find(x=>x.id==id);return `${p.name} — ${n} dona — ${money(p.price*n)}`}).join('\n');alert(rows?('🛒 SAVAT\n\n'+rows):'Savat hozircha bo‘sh.')}
+render();
+</script></body></html>
