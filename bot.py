@@ -4,7 +4,7 @@ from datetime import datetime
 
 from aiohttp import web
 from aiogram import Bot, Dispatcher, F
-from aiogram.filters import Command, CommandStart
+from aiogram.filters import CommandStart, Command
 from aiogram.types import (
     Message,
     CallbackQuery,
@@ -16,15 +16,9 @@ from aiogram.types import (
 )
 from dotenv import load_dotenv
 
-
-# =========================
-# SOZLAMALAR
-# =========================
-
 load_dotenv()
 
 TOKEN = os.getenv("BOT_TOKEN")
-
 if not TOKEN:
     raise RuntimeError("BOT_TOKEN topilmadi")
 
@@ -32,23 +26,21 @@ bot = Bot(TOKEN)
 dp = Dispatcher()
 
 DB_NAME = "shop.db"
-ADMIN_ID = os.getenv("ADMIN_ID", "8082110485")
+ADMIN_ID = os.getenv("ADMIN_ID")
 
-# KATALOG KATEGORIYALARI
 CATEGORIES = [
-    ("🥤", "Ichimliklar"),
-    ("🍫", "Shirinliklar"),
-    ("🍎", "Mevalar"),
-    ("🥕", "Sabzavotlar"),
-    ("👶", "Bolalar ovqati"),
-    ("🍳", "Oshxona mahsulotlari"),
-    ("🧴", "Gellar va shampunlar"),
+    "🥤 Ichimliklar",
+    "🍫 Shirinliklar",
+    "🍎 Mevalar",
+    "🥕 Sabzavotlar",
+    "👶 Bolalar ovqati",
+    "🍳 Oshxona mahsulotlari",
+    "🧴 Gellar va shampunlar",
 ]
 
+order_states = {}
+admin_states = {}
 
-# =========================
-# DATABASE
-# =========================
 
 def get_db():
     return sqlite3.connect(DB_NAME)
@@ -63,22 +55,22 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             price INTEGER NOT NULL,
-            category TEXT DEFAULT 'Oshxona mahsulotlari',
-            photo_id TEXT
+            category TEXT DEFAULT '🍳 Oshxona mahsulotlari',
+            image_file_id TEXT
         )
     """)
 
-    # Eski shop.db bo'lsa, category ustunini qo'shamiz
+    # Eski products jadvalini yangilash
     cur.execute("PRAGMA table_info(products)")
     columns = [row[1] for row in cur.fetchall()]
 
     if "category" not in columns:
         cur.execute(
-            "ALTER TABLE products ADD COLUMN category TEXT DEFAULT 'Oshxona mahsulotlari'"
+            "ALTER TABLE products ADD COLUMN category TEXT DEFAULT '🍳 Oshxona mahsulotlari'"
         )
 
-    if "photo_id" not in columns:
-        cur.execute("ALTER TABLE products ADD COLUMN photo_id TEXT")
+    if "image_file_id" not in columns:
+        cur.execute("ALTER TABLE products ADD COLUMN image_file_id TEXT")
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS cart (
@@ -108,28 +100,22 @@ def init_db():
 
 
 def seed_products():
-    """
-    Birinchi marta baza bo'sh bo'lsa, vaqtinchalik namunaviy mahsulotlar qo'shiladi.
-    Keyinchalik ularni o'zgartirish yoki ko'paytirish mumkin.
-    """
     db = get_db()
     cur = db.cursor()
-
     cur.execute("SELECT COUNT(*) FROM products")
     count = cur.fetchone()[0]
 
     if count == 0:
         products = [
-            ("Sut 1 litr", 10000, "Ichimliklar"),
-            ("Choy", 18000, "Ichimliklar"),
-            ("Shakar 1 kg", 12000, "Shirinliklar"),
-            ("Non", 5000, "Oshxona mahsulotlari"),
+            ("Sut 1 litr", 10000, "🥤 Ichimliklar", None),
+            ("Choy", 18000, "🥤 Ichimliklar", None),
+            ("Shakar 1 kg", 12000, "🍫 Shirinliklar", None),
+            ("Non", 5000, "🍳 Oshxona mahsulotlari", None),
         ]
-
         cur.executemany(
             """
-            INSERT INTO products (name, price, category)
-            VALUES (?, ?, ?)
+            INSERT INTO products (name, price, category, image_file_id)
+            VALUES (?, ?, ?, ?)
             """,
             products
         )
@@ -138,84 +124,44 @@ def seed_products():
     db.close()
 
 
-# =========================
-# KLAVIATURALAR
-# =========================
-
 def main_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🛍 Mahsulotlar", callback_data="products")],
         [
-            InlineKeyboardButton(
-                text="🛍 Mahsulotlar",
-                callback_data="products"
-            )
+            InlineKeyboardButton(text="🛒 Savat", callback_data="cart"),
+            InlineKeyboardButton(text="📝 Buyurtma berish", callback_data="order"),
         ],
         [
-            InlineKeyboardButton(
-                text="🛒 Savat",
-                callback_data="cart"
-            ),
-            InlineKeyboardButton(
-                text="📝 Buyurtma berish",
-                callback_data="order"
-            )
+            InlineKeyboardButton(text="📦 Buyurtmalar", callback_data="orders"),
+            InlineKeyboardButton(text="📞 Aloqa", callback_data="contact"),
         ],
-        [
-            InlineKeyboardButton(
-                text="📦 Buyurtmalar",
-                callback_data="orders"
-            ),
-            InlineKeyboardButton(
-                text="📞 Aloqa",
-                callback_data="contact"
-            )
-        ]
     ])
 
 
 def back_home():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(
-                text="🏠 Bosh menyu",
-                callback_data="home"
-            )
-        ]
+        [InlineKeyboardButton(text="🏠 Bosh menyu", callback_data="home")]
     ])
 
 
 def catalog_keyboard():
     buttons = []
-
-    for emoji, name in CATEGORIES:
+    for i, category in enumerate(CATEGORIES):
         buttons.append([
             InlineKeyboardButton(
-                text=f"{emoji} {name}",
-                callback_data=f"category:{name}"
+                text=category,
+                callback_data=f"category:{i}"
             )
         ])
-
-    buttons.append([
-        InlineKeyboardButton(
-            text="🛒 Savat",
-            callback_data="cart"
-        )
-    ])
-
-    buttons.append([
-        InlineKeyboardButton(
-            text="🏠 Bosh menyu",
-            callback_data="home"
-        )
-    ])
-
+    buttons.append([InlineKeyboardButton(text="🛒 Savat", callback_data="cart")])
+    buttons.append([InlineKeyboardButton(text="🏠 Bosh menyu", callback_data="home")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-def products_keyboard(category):
+def products_keyboard(category_index):
+    category = CATEGORIES[category_index]
     db = get_db()
     cur = db.cursor()
-
     cur.execute(
         """
         SELECT id, name, price
@@ -223,9 +169,8 @@ def products_keyboard(category):
         WHERE category = ?
         ORDER BY id
         """,
-        (category,)
+        (category,),
     )
-
     products = cur.fetchall()
     db.close()
 
@@ -240,75 +185,13 @@ def products_keyboard(category):
         ])
 
     buttons.append([
-        InlineKeyboardButton(
-            text="⬅️ Kategoriyalar",
-            callback_data="products"
-        )
+        InlineKeyboardButton(text="⬅️ Kategoriyalar", callback_data="products")
     ])
-
     buttons.append([
-        InlineKeyboardButton(
-            text="🛒 Savat",
-            callback_data="cart"
-        )
-    ])
-
-    buttons.append([
-        InlineKeyboardButton(
-            text="🏠 Bosh menyu",
-            callback_data="home"
-        )
+        InlineKeyboardButton(text="🛒 Savat", callback_data="cart")
     ])
 
     return InlineKeyboardMarkup(inline_keyboard=buttons)
-
-
-def confirm_order_keyboard():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(
-                text="✅ Buyurtmani tasdiqlash",
-                callback_data="confirm_order"
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="❌ Bekor qilish",
-                callback_data="cancel_order"
-            )
-        ]
-    ])
-
-
-def phone_keyboard():
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [
-                KeyboardButton(
-                    text="📞 Telefon raqamimni yuborish",
-                    request_contact=True
-                )
-            ]
-        ],
-        resize_keyboard=True,
-        one_time_keyboard=True
-    )
-
-
-# =========================
-# BUYURTMA HOLATLARI
-# =========================
-
-order_states = {}
-admin_states = {}
-
-
-# =========================
-# ADMIN PANEL
-# =========================
-
-def is_admin(user_id: int) -> bool:
-    return bool(ADMIN_ID) and str(user_id) == str(ADMIN_ID)
 
 
 def admin_keyboard():
@@ -316,219 +199,76 @@ def admin_keyboard():
         [InlineKeyboardButton(text="➕ Mahsulot qo‘shish", callback_data="admin_add")],
         [InlineKeyboardButton(text="📋 Mahsulotlar ro‘yxati", callback_data="admin_list")],
         [InlineKeyboardButton(text="🗑 Mahsulot o‘chirish", callback_data="admin_delete")],
+        [InlineKeyboardButton(text="🏠 Bosh menyu", callback_data="home")],
     ])
 
 
 def admin_category_keyboard():
-    rows = []
-    for emoji, name in CATEGORIES:
-        rows.append([
-            InlineKeyboardButton(
-                text=f"{emoji} {name}",
-                callback_data=f"admin_cat:{name}"
-            )
-        ])
-    rows.append([InlineKeyboardButton(text="❌ Bekor qilish", callback_data="admin_cancel")])
-    return InlineKeyboardMarkup(inline_keyboard=rows)
-
-
-@dp.message(Command("admin"))
-async def admin_command(message: Message):
-    if not ADMIN_ID:
-        await message.answer(
-            "⚠️ Admin ID sozlanmagan. Render → Environment → ADMIN_ID ga Telegram ID ni kiriting."
-        )
-        return
-
-    if not is_admin(message.from_user.id):
-        await message.answer("⛔ Sizda admin huquqi yo‘q.")
-        return
-    await message.answer(
-        "⚙️ ADMIN PANEL\n\nKerakli amalni tanlang:",
-        reply_markup=admin_keyboard()
-    )
-
-
-@dp.callback_query(F.data == "admin_add")
-async def admin_add(callback: CallbackQuery):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("Ruxsat yo‘q", show_alert=True)
-        return
-    admin_states[callback.from_user.id] = {"step": "name"}
-    await callback.message.answer("➕ Yangi mahsulot nomini yozing:")
-    await callback.answer()
-
-
-@dp.callback_query(F.data == "admin_list")
-async def admin_list(callback: CallbackQuery):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("Ruxsat yo‘q", show_alert=True)
-        return
-    db = get_db()
-    cur = db.cursor()
-    cur.execute("SELECT id, name, price, category, photo_id FROM products ORDER BY id DESC")
-    products = cur.fetchall()
-    db.close()
-    if not products:
-        text = "📋 Hozircha mahsulotlar yo‘q."
-    else:
-        text = "📋 MAHSULOTLAR\n\n"
-        for pid, name, price, category, photo_id in products:
-            photo_mark = "📷" if photo_id else "🖼️ yo‘q"
-            text += f"#{pid} • {name} — {price:,} so‘m\n   {category} • {photo_mark}\n\n"
-    await callback.message.answer(text, reply_markup=admin_keyboard())
-    await callback.answer()
-
-
-@dp.callback_query(F.data == "admin_delete")
-async def admin_delete(callback: CallbackQuery):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("Ruxsat yo‘q", show_alert=True)
-        return
-    db = get_db()
-    cur = db.cursor()
-    cur.execute("SELECT id, name, price FROM products ORDER BY id DESC")
-    products = cur.fetchall()
-    db.close()
-    if not products:
-        await callback.answer("Mahsulotlar yo‘q", show_alert=True)
-        return
     buttons = []
-    for pid, name, price in products:
+    for i, category in enumerate(CATEGORIES):
         buttons.append([
             InlineKeyboardButton(
-                text=f"🗑 {name} — {price:,} so‘m",
-                callback_data=f"admin_del:{pid}"
+                text=category,
+                callback_data=f"admin_cat:{i}"
             )
         ])
-    buttons.append([InlineKeyboardButton(text="⚙️ Admin panel", callback_data="admin_panel")])
-    await callback.message.answer(
-        "🗑 O‘chirmoqchi bo‘lgan mahsulotni tanlang:",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
-    )
-    await callback.answer()
+    buttons.append([
+        InlineKeyboardButton(text="❌ Bekor qilish", callback_data="admin_cancel")
+    ])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-@dp.callback_query(F.data.startswith("admin_del:"))
-async def admin_del(callback: CallbackQuery):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("Ruxsat yo‘q", show_alert=True)
-        return
-    product_id = int(callback.data.split(":", 1)[1])
+def admin_delete_keyboard():
     db = get_db()
     cur = db.cursor()
-    cur.execute("SELECT name FROM products WHERE id = ?", (product_id,))
-    row = cur.fetchone()
-    if not row:
-        db.close()
-        await callback.answer("Mahsulot topilmadi", show_alert=True)
-        return
-    name = row[0]
-    cur.execute("DELETE FROM cart WHERE product_id = ?", (product_id,))
-    cur.execute("DELETE FROM products WHERE id = ?", (product_id,))
-    db.commit()
-    db.close()
-    await callback.message.answer(f"✅ {name} o‘chirildi.", reply_markup=admin_keyboard())
-    await callback.answer()
-
-
-@dp.callback_query(F.data.startswith("admin_cat:"))
-async def admin_category(callback: CallbackQuery):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("Ruxsat yo‘q", show_alert=True)
-        return
-
-    user_id = callback.from_user.id
-    state = admin_states.get(user_id)
-
-    if not state or state.get("step") != "category":
-        await callback.answer(
-            "Mahsulot qo‘shish jarayoni topilmadi",
-            show_alert=True
-        )
-        return
-
-    category = callback.data.split(":", 1)[1]
-    state["category"] = category
-    state["step"] = "photo"
-
-    await callback.message.answer(
-        "📷 Endi mahsulot rasmini yuboring.\n\n"
-        "Rasmni oddiy foto sifatida yuboring."
-    )
-    await callback.answer()
-
-
-@dp.message(F.photo)
-async def admin_product_photo(message: Message):
-    user_id = message.from_user.id
-
-    if not is_admin(user_id) or user_id not in admin_states:
-        return
-
-    state = admin_states[user_id]
-
-    if state.get("step") != "photo":
-        return
-
-    state["photo_id"] = message.photo[-1].file_id
-
-    db = get_db()
-    cur = db.cursor()
-    cur.execute(
-        """
-        INSERT INTO products (name, price, category, photo_id)
-        VALUES (?, ?, ?, ?)
-        """,
-        (
-            state["name"],
-            state["price"],
-            state["category"],
-            state["photo_id"]
-        )
-    )
-    db.commit()
+    cur.execute("SELECT id, name, price FROM products ORDER BY id")
+    products = cur.fetchall()
     db.close()
 
-    await message.answer_photo(
-        state["photo_id"],
-        caption=(
-            "✅ Mahsulot qo‘shildi!\n\n"
-            f"🛍 {state['name']}\n"
-            f"💰 {state['price']:,} so‘m\n"
-            f"📂 {state['category']}"
-        )
+    buttons = []
+    for product_id, name, price in products:
+        buttons.append([
+            InlineKeyboardButton(
+                text=f"🗑 {name} — {price:,} so'm",
+                callback_data=f"admin_del:{product_id}"
+            )
+        ])
+
+    buttons.append([
+        InlineKeyboardButton(text="⬅️ Admin panel", callback_data="admin")
+    ])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def confirm_order_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="✅ Buyurtmani tasdiqlash",
+            callback_data="confirm_order"
+        )],
+        [InlineKeyboardButton(
+            text="❌ Bekor qilish",
+            callback_data="cancel_order"
+        )],
+    ])
+
+
+def phone_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(
+                text="📞 Telefon raqamimni yuborish",
+                request_contact=True
+            )]
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=True,
     )
 
-    admin_states.pop(user_id, None)
-    await message.answer(
-        "⚙️ Admin panel:",
-        reply_markup=admin_keyboard()
-    )
 
+def is_admin(user_id):
+    return ADMIN_ID and str(user_id) == str(ADMIN_ID)
 
-@dp.callback_query(F.data == "admin_panel")
-async def admin_panel(callback: CallbackQuery):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("Ruxsat yo‘q", show_alert=True)
-        return
-    await callback.message.answer("⚙️ ADMIN PANEL", reply_markup=admin_keyboard())
-    await callback.answer()
-
-
-@dp.callback_query(F.data == "admin_cancel")
-async def admin_cancel(callback: CallbackQuery):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("Ruxsat yo‘q", show_alert=True)
-        return
-    admin_states.pop(callback.from_user.id, None)
-    await callback.message.answer("❌ Bekor qilindi.", reply_markup=admin_keyboard())
-    await callback.answer()
-
-
-# =========================
-# /START
-# =========================
 
 @dp.message(CommandStart())
 async def start(message: Message):
@@ -536,35 +276,251 @@ async def start(message: Message):
         "🛍 Assalomu alaykum!\n\n"
         "777MAZ Magazin botiga xush kelibsiz!\n\n"
         "Kerakli bo‘limni tanlang:",
-        reply_markup=main_menu()
+        reply_markup=main_menu(),
     )
 
 
-# =========================
-# MAHSULOTLAR / KATALOG
-# =========================
+@dp.message(Command("admin"))
+async def admin_command(message: Message):
+    if not is_admin(message.from_user.id):
+        await message.answer("⛔ Sizda admin huquqi yo‘q.")
+        return
+
+    admin_states.pop(message.from_user.id, None)
+
+    await message.answer(
+        "⚙️ ADMIN PANEL\n\n"
+        "Kerakli amalni tanlang:",
+        reply_markup=admin_keyboard(),
+    )
+
+
+@dp.callback_query(F.data == "admin")
+async def admin_callback(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Admin huquqi yo‘q.", show_alert=True)
+        return
+
+    admin_states.pop(callback.from_user.id, None)
+
+    await callback.message.edit_text(
+        "⚙️ ADMIN PANEL\n\n"
+        "Kerakli amalni tanlang:",
+        reply_markup=admin_keyboard(),
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "admin_add")
+async def admin_add(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Admin huquqi yo‘q.", show_alert=True)
+        return
+
+    admin_states[callback.from_user.id] = {
+        "step": "name",
+        "name": "",
+        "price": 0,
+        "category": "",
+    }
+
+    await callback.message.answer(
+        "➕ MAHSULOT QO‘SHISH\n\n"
+        "1️⃣ Mahsulot nomini yozing:"
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("admin_cat:"))
+async def admin_category(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Admin huquqi yo‘q.", show_alert=True)
+        return
+
+    user_id = callback.from_user.id
+    state = admin_states.get(user_id)
+
+    if not state or state.get("step") != "category":
+        await callback.answer("Avval mahsulot qo‘shishni boshlang.", show_alert=True)
+        return
+
+    index = int(callback.data.split(":")[1])
+    state["category"] = CATEGORIES[index]
+    state["step"] = "photo"
+
+    await callback.message.answer(
+        f"✅ Kategoriya: {state['category']}\n\n"
+        "4️⃣ Endi mahsulot rasmini yuboring 📷\n\n"
+        "Rasm yuborish majburiy."
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "admin_cancel")
+async def admin_cancel(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Admin huquqi yo‘q.", show_alert=True)
+        return
+
+    admin_states.pop(callback.from_user.id, None)
+
+    await callback.message.answer(
+        "❌ Mahsulot qo‘shish bekor qilindi.",
+        reply_markup=admin_keyboard()
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "admin_list")
+async def admin_list(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Admin huquqi yo‘q.", show_alert=True)
+        return
+
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        "SELECT id, name, price, category FROM products ORDER BY id"
+    )
+    products = cur.fetchall()
+    db.close()
+
+    if not products:
+        await callback.message.edit_text(
+            "📋 Hozircha mahsulotlar yo‘q.",
+            reply_markup=admin_keyboard()
+        )
+        await callback.answer()
+        return
+
+    text = "📋 MAHSULOTLAR RO‘YXATI\n\n"
+
+    for product_id, name, price, category in products:
+        text += (
+            f"№{product_id} — {name}\n"
+            f"💰 {price:,} so'm\n"
+            f"📂 {category}\n\n"
+        )
+
+    await callback.message.edit_text(text, reply_markup=admin_keyboard())
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "admin_delete")
+async def admin_delete(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Admin huquqi yo‘q.", show_alert=True)
+        return
+
+    await callback.message.edit_text(
+        "🗑 O‘CHIRILADIGAN MAHSULOTNI TANLANG:",
+        reply_markup=admin_delete_keyboard()
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("admin_del:"))
+async def admin_del(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Admin huquqi yo‘q.", show_alert=True)
+        return
+
+    product_id = int(callback.data.split(":")[1])
+
+    db = get_db()
+    cur = db.cursor()
+
+    cur.execute("SELECT name FROM products WHERE id = ?", (product_id,))
+    product = cur.fetchone()
+
+    if not product:
+        db.close()
+        await callback.answer("Mahsulot topilmadi.", show_alert=True)
+        return
+
+    cur.execute("DELETE FROM cart WHERE product_id = ?", (product_id,))
+    cur.execute("DELETE FROM products WHERE id = ?", (product_id,))
+
+    db.commit()
+    db.close()
+
+    await callback.answer(f"✅ {product[0]} o‘chirildi.", show_alert=True)
+
+    await callback.message.edit_text(
+        "🗑 O‘CHIRILADIGAN MAHSULOTNI TANLANG:",
+        reply_markup=admin_delete_keyboard()
+    )
+
+
+@dp.message(F.photo)
+async def photo_received(message: Message):
+    user_id = message.from_user.id
+
+    if not is_admin(user_id):
+        return
+
+    state = admin_states.get(user_id)
+
+    if not state or state.get("step") != "photo":
+        return
+
+    photo = message.photo[-1]
+
+    db = get_db()
+    cur = db.cursor()
+
+    cur.execute(
+        """
+        INSERT INTO products (name, price, category, image_file_id)
+        VALUES (?, ?, ?, ?)
+        """,
+        (
+            state["name"],
+            state["price"],
+            state["category"],
+            photo.file_id,
+        ),
+    )
+
+    product_id = cur.lastrowid
+    db.commit()
+    db.close()
+
+    admin_states.pop(user_id, None)
+
+    await message.answer(
+        "✅ MAHSULOT QO‘SHILDI!\n\n"
+        f"🆔 ID: {product_id}\n"
+        f"🛍 Nomi: {state['name']}\n"
+        f"💰 Narxi: {state['price']:,} so‘m\n"
+        f"📂 Kategoriya: {state['category']}\n"
+        "🖼 Rasm: saqlandi",
+        reply_markup=admin_keyboard(),
+    )
+
 
 @dp.callback_query(F.data == "products")
 async def products_callback(callback: CallbackQuery):
     await callback.message.edit_text(
         "🛍 MAHSULOTLAR KATALOGI\n\n"
-        "Kerakli bo‘limni tanlang:",
-        reply_markup=catalog_keyboard()
+        "Kerakli kategoriyani tanlang:",
+        reply_markup=catalog_keyboard(),
     )
     await callback.answer()
 
 
-# =========================
-# KATEGORIYA ICHIGA KIRISH
-# =========================
-
 @dp.callback_query(F.data.startswith("category:"))
 async def category_callback(callback: CallbackQuery):
-    category = callback.data.split(":", 1)[1]
+    index = int(callback.data.split(":")[1])
+
+    if index < 0 or index >= len(CATEGORIES):
+        await callback.answer("Kategoriya topilmadi.", show_alert=True)
+        return
+
+    category = CATEGORIES[index]
 
     db = get_db()
     cur = db.cursor()
-
     cur.execute(
         "SELECT COUNT(*) FROM products WHERE category = ?",
         (category,)
@@ -573,79 +529,91 @@ async def category_callback(callback: CallbackQuery):
     db.close()
 
     if count == 0:
-        text = (
+        await callback.message.edit_text(
             f"{category}\n\n"
-            "📭 Bu bo‘limda hozircha mahsulotlar yo‘q."
+            "Hozircha bu kategoriyada mahsulot yo‘q.",
+            reply_markup=products_keyboard(index),
         )
     else:
-        text = (
+        await callback.message.edit_text(
             f"{category}\n\n"
-            "Mahsulotni tanlang:"
+            "Mahsulotni tanlang:",
+            reply_markup=products_keyboard(index),
         )
 
-    await callback.message.edit_text(
-        text,
-        reply_markup=products_keyboard(category)
-    )
     await callback.answer()
 
 
-# =========================
-# MAHSULOT RASMI / MA'LUMOTI
-# =========================
-
 @dp.callback_query(F.data.startswith("product:"))
-async def product_detail(callback: CallbackQuery):
-    product_id = int(callback.data.split(":", 1)[1])
+async def product_callback(callback: CallbackQuery):
+    product_id = int(callback.data.split(":")[1])
 
     db = get_db()
     cur = db.cursor()
     cur.execute(
-        "SELECT name, price, category, photo_id FROM products WHERE id = ?",
+        """
+        SELECT name, price, category, image_file_id
+        FROM products
+        WHERE id = ?
+        """,
         (product_id,)
     )
     product = cur.fetchone()
     db.close()
 
     if not product:
-        await callback.answer("Mahsulot topilmadi", show_alert=True)
+        await callback.answer("Mahsulot topilmadi.", show_alert=True)
         return
 
-    name, price, category, photo_id = product
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🛒 Savatga qo‘shish", callback_data=f"add_to_cart:{product_id}")],
-        [InlineKeyboardButton(text="⬅️ Kategoriyaga qaytish", callback_data=f"category:{category}")],
-        [InlineKeyboardButton(text="🏠 Bosh menyu", callback_data="home")]
-    ])
+    name, price, category, image_file_id = product
 
-    caption = (
-        f"🛍 {name}\n\n"
-        f"💰 Narxi: {price:,} so‘m\n"
-        f"📂 {category}"
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        "SELECT id FROM products WHERE category = ? ORDER BY id",
+        (category,)
     )
+    ids = [row[0] for row in cur.fetchall()]
+    db.close()
 
     try:
-        if photo_id:
-            await callback.message.answer_photo(
-                photo_id,
-                caption=caption,
-                reply_markup=keyboard
-            )
-        else:
-            await callback.message.answer(
-                caption + "\n\n📷 Rasm hozircha mavjud emas.",
-                reply_markup=keyboard
-            )
-    except Exception as e:
-        print("Mahsulot rasmi yuborilmadi:", e)
-        await callback.message.answer(caption, reply_markup=keyboard)
+        category_index = CATEGORIES.index(category)
+    except ValueError:
+        category_index = 0
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text=f"🛒 Savatga qo‘shish — {price:,} so'm",
+            callback_data=f"add_to_cart:{product_id}"
+        )],
+        [InlineKeyboardButton(
+            text="⬅️ Mahsulotlar",
+            callback_data=f"category:{category_index}"
+        )],
+        [InlineKeyboardButton(
+            text="🛒 Savat",
+            callback_data="cart"
+        )],
+    ])
+
+    text = (
+        f"🛍 {name}\n\n"
+        f"💰 Narxi: {price:,} so'm\n"
+        f"📂 {category}\n\n"
+        "Savatga qo‘shish uchun tugmani bosing."
+    )
+
+    if image_file_id:
+        await callback.message.answer_photo(
+            photo=image_file_id,
+            caption=text,
+            reply_markup=keyboard,
+        )
+    else:
+        await callback.message.answer(text, reply_markup=keyboard)
 
     await callback.answer()
 
-
-# =========================
-# SAVATGA QO‘SHISH
-# =========================
 
 @dp.callback_query(F.data.startswith("add_to_cart:"))
 async def add_to_cart(callback: CallbackQuery):
@@ -656,31 +624,25 @@ async def add_to_cart(callback: CallbackQuery):
     cur = db.cursor()
 
     cur.execute(
-        "SELECT name, price, photo_id FROM products WHERE id = ?",
+        "SELECT name, price FROM products WHERE id = ?",
         (product_id,)
     )
-
     product = cur.fetchone()
 
     if not product:
         db.close()
-        await callback.answer(
-            "Mahsulot topilmadi",
-            show_alert=True
-        )
+        await callback.answer("Mahsulot topilmadi", show_alert=True)
         return
 
-    name, price, photo_id = product
+    name, price = product
 
     cur.execute(
         """
-        SELECT quantity
-        FROM cart
+        SELECT quantity FROM cart
         WHERE user_id = ? AND product_id = ?
         """,
         (user_id, product_id)
     )
-
     existing = cur.fetchone()
 
     if existing:
@@ -704,14 +666,8 @@ async def add_to_cart(callback: CallbackQuery):
     db.commit()
     db.close()
 
-    await callback.answer(
-        f"✅ {name} savatga qo‘shildi"
-    )
+    await callback.answer(f"✅ {name} savatga qo‘shildi")
 
-
-# =========================
-# SAVAT
-# =========================
 
 @dp.callback_query(F.data == "cart")
 async def cart_callback(callback: CallbackQuery):
@@ -754,37 +710,23 @@ async def cart_callback(callback: CallbackQuery):
     text += f"💰 Jami: {total:,} so'm"
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(
-                text="📝 Buyurtma berish",
-                callback_data="order"
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="🛍 Yana mahsulot olish",
-                callback_data="products"
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="🏠 Bosh menyu",
-                callback_data="home"
-            )
-        ]
+        [InlineKeyboardButton(
+            text="📝 Buyurtma berish",
+            callback_data="order"
+        )],
+        [InlineKeyboardButton(
+            text="🛍 Yana mahsulot olish",
+            callback_data="products"
+        )],
+        [InlineKeyboardButton(
+            text="🏠 Bosh menyu",
+            callback_data="home"
+        )],
     ])
 
-    await callback.message.edit_text(
-        text,
-        reply_markup=keyboard
-    )
-
+    await callback.message.edit_text(text, reply_markup=keyboard)
     await callback.answer()
 
-
-# =========================
-# BUYURTMA BOSHLASH
-# =========================
 
 @dp.callback_query(F.data == "order")
 async def order_callback(callback: CallbackQuery):
@@ -814,20 +756,15 @@ async def order_callback(callback: CallbackQuery):
         "step": "name",
         "name": "",
         "phone": "",
-        "address": ""
+        "address": "",
     }
 
     await callback.message.answer(
         "📝 BUYURTMA BERISH\n\n"
         "1️⃣ Ismingizni yozing:"
     )
-
     await callback.answer()
 
-
-# =========================
-# TELEFON
-# =========================
 
 @dp.message(F.contact)
 async def contact_received(message: Message):
@@ -847,54 +784,67 @@ async def contact_received(message: Message):
     await message.answer(
         "📍 Endi yetkazib berish manzilingizni yozing:",
         reply_markup=ReplyKeyboardMarkup(
-            keyboard=[
-                [
-                    KeyboardButton(text="❌ Bekor qilish")
-                ]
-            ],
+            keyboard=[[KeyboardButton(text="❌ Bekor qilish")]],
             resize_keyboard=True
         )
     )
 
 
-# =========================
-# BUYURTMA MATNLARI
-# =========================
-
-@dp.message()
-async def order_messages(message: Message):
+@dp.message(F.text)
+async def text_messages(message: Message):
     user_id = message.from_user.id
+    text = message.text or ""
 
-    # ADMIN MAHSULOT QO‘SHISH JARAYONI
+    # Admin mahsulot qo‘shish jarayoni
     if is_admin(user_id) and user_id in admin_states:
         state = admin_states[user_id]
-        text = (message.text or "").strip()
-        if state["step"] == "name":
-            if len(text) < 2:
-                await message.answer("Mahsulot nomini to‘liqroq yozing:")
-                return
-            state["name"] = text
-            state["step"] = "price"
-            await message.answer("💰 Mahsulot narxini faqat raqamda yozing. Masalan: 15000")
-            return
-        if state["step"] == "price":
-            price_text = text.replace(" ", "").replace(",", "")
-            if not price_text.isdigit() or int(price_text) <= 0:
-                await message.answer("❗ Narxni faqat raqamda yozing. Masalan: 15000")
-                return
-            state["price"] = int(price_text)
-            state["step"] = "category"
-            await message.answer("📂 Kategoriyani tanlang:", reply_markup=admin_category_keyboard())
-            return
-        if state["step"] == "category":
-            await message.answer("📂 Iltimos, pastdagi kategoriyalardan birini tanlang.", reply_markup=admin_category_keyboard())
+
+        if text == "❌ Bekor qilish":
+            admin_states.pop(user_id, None)
+            await message.answer(
+                "❌ Amal bekor qilindi.",
+                reply_markup=admin_keyboard()
+            )
             return
 
+        if state["step"] == "name":
+            if len(text.strip()) < 2:
+                await message.answer("Mahsulot nomini to‘liqroq yozing:")
+                return
+
+            state["name"] = text.strip()
+            state["step"] = "price"
+
+            await message.answer(
+                "2️⃣ Mahsulot narxini faqat raqam bilan yozing.\n\n"
+                "Masalan: 15000"
+            )
+            return
+
+        if state["step"] == "price":
+            price_text = text.replace(" ", "").replace(",", "")
+
+            if not price_text.isdigit() or int(price_text) <= 0:
+                await message.answer(
+                    "❗ Narx noto‘g‘ri.\n"
+                    "Masalan: 15000"
+                )
+                return
+
+            state["price"] = int(price_text)
+            state["step"] = "category"
+
+            await message.answer(
+                "3️⃣ Kategoriyani tanlang:",
+                reply_markup=admin_category_keyboard()
+            )
+            return
+
+    # Oddiy buyurtma jarayoni
     if user_id not in order_states:
         return
 
     state = order_states[user_id]
-    text = message.text or ""
 
     if text == "❌ Bekor qilish":
         order_states.pop(user_id, None)
@@ -905,7 +855,6 @@ async def order_messages(message: Message):
         )
         return
 
-    # ISM
     if state["step"] == "name":
         if len(text.strip()) < 2:
             await message.answer(
@@ -923,7 +872,6 @@ async def order_messages(message: Message):
         )
         return
 
-    # TELEFON
     if state["step"] == "phone":
         phone = text.strip()
 
@@ -939,17 +887,12 @@ async def order_messages(message: Message):
         await message.answer(
             "📍 Yetkazib berish manzilingizni yozing:",
             reply_markup=ReplyKeyboardMarkup(
-                keyboard=[
-                    [
-                        KeyboardButton(text="❌ Bekor qilish")
-                    ]
-                ],
+                keyboard=[[KeyboardButton(text="❌ Bekor qilish")]],
                 resize_keyboard=True
             )
         )
         return
 
-    # MANZIL
     if state["step"] == "address":
         if len(text.strip()) < 5:
             await message.answer(
@@ -987,10 +930,9 @@ async def order_messages(message: Message):
         for name, price, quantity in items:
             summa = price * quantity
             total += summa
-
             items_text += (
                 f"• {name} — {quantity} dona\n"
-                f"  {summa:,} so‘m\n"
+                f"  {summa:,} so'm\n"
             )
 
         state["items"] = items_text
@@ -1002,16 +944,11 @@ async def order_messages(message: Message):
             f"📞 Telefon: {state['phone']}\n"
             f"📍 Manzil: {state['address']}\n\n"
             f"🛍 Mahsulotlar:\n{items_text}\n"
-            f"💰 Jami: {total:,} so‘m\n\n"
+            f"💰 Jami: {total:,} so'm\n\n"
             "Buyurtmani tasdiqlaysizmi?",
             reply_markup=confirm_order_keyboard()
         )
-        return
 
-
-# =========================
-# BUYURTMANI TASDIQLASH
-# =========================
 
 @dp.callback_query(F.data == "confirm_order")
 async def confirm_order(callback: CallbackQuery):
@@ -1061,7 +998,7 @@ async def confirm_order(callback: CallbackQuery):
     await callback.message.answer(
         "✅ BUYURTMANGIZ QABUL QILINDI!\n\n"
         f"📦 Buyurtma №{order_id}\n"
-        f"💰 Jami: {state['total']:,} so‘m\n\n"
+        f"💰 Jami: {state['total']:,} so'm\n\n"
         "Tez orada siz bilan bog‘lanamiz.",
         reply_markup=main_menu()
     )
@@ -1076,7 +1013,7 @@ async def confirm_order(callback: CallbackQuery):
                 f"📞 Telefon: {state['phone']}\n"
                 f"📍 Manzil: {state['address']}\n\n"
                 f"🛍 Mahsulotlar:\n{state['items']}\n"
-                f"💰 Jami: {state['total']:,} so‘m\n\n"
+                f"💰 Jami: {state['total']:,} so'm\n\n"
                 f"🕐 {created_at}"
             )
         except Exception as e:
@@ -1084,10 +1021,6 @@ async def confirm_order(callback: CallbackQuery):
 
     await callback.answer()
 
-
-# =========================
-# BUYURTMANI BEKOR QILISH
-# =========================
 
 @dp.callback_query(F.data == "cancel_order")
 async def cancel_order(callback: CallbackQuery):
@@ -1102,10 +1035,6 @@ async def cancel_order(callback: CallbackQuery):
 
     await callback.answer()
 
-
-# =========================
-# BUYURTMALAR
-# =========================
 
 @dp.callback_query(F.data == "orders")
 async def orders_callback(callback: CallbackQuery):
@@ -1138,7 +1067,7 @@ async def orders_callback(callback: CallbackQuery):
     for order_id, total, status, created_at in orders:
         text += (
             f"№{order_id}\n"
-            f"💰 {total:,} so‘m\n"
+            f"💰 {total:,} so'm\n"
             f"📌 Holat: {status}\n"
             f"🕐 {created_at}\n\n"
         )
@@ -1147,13 +1076,8 @@ async def orders_callback(callback: CallbackQuery):
         text,
         reply_markup=back_home()
     )
-
     await callback.answer()
 
-
-# =========================
-# ALOQA
-# =========================
 
 @dp.callback_query(F.data == "contact")
 async def contact_callback(callback: CallbackQuery):
@@ -1163,13 +1087,8 @@ async def contact_callback(callback: CallbackQuery):
         "📍 Manzil: Mirzo Ulug‘bek tumani",
         reply_markup=back_home()
     )
-
     await callback.answer()
 
-
-# =========================
-# BOSH MENYU
-# =========================
 
 @dp.callback_query(F.data == "home")
 async def home_callback(callback: CallbackQuery):
@@ -1178,49 +1097,26 @@ async def home_callback(callback: CallbackQuery):
         "Kerakli bo‘limni tanlang:",
         reply_markup=main_menu()
     )
-
     await callback.answer()
 
-
-# =========================
-# WEBHOOK
-# =========================
 
 async def webhook(request: web.Request):
     try:
         data = await request.json()
-
         update = Update.model_validate(
             data,
             context={"bot": bot}
         )
-
         await dp.feed_update(bot, update)
-
         return web.Response(text="OK")
-
     except Exception as e:
         print("Webhook error:", e)
+        return web.Response(text="ERROR", status=500)
 
-        return web.Response(
-            text="ERROR",
-            status=500
-        )
-
-
-# =========================
-# HEALTH CHECK
-# =========================
 
 async def health(request: web.Request):
-    return web.Response(
-        text="777MAZ bot is running"
-    )
+    return web.Response(text="777MAZ bot is running")
 
-
-# =========================
-# STARTUP
-# =========================
 
 async def on_startup(app):
     init_db()
@@ -1245,10 +1141,6 @@ async def on_startup(app):
     print(f"Webhook set: {webhook_url}")
 
 
-# =========================
-# CLEANUP
-# =========================
-
 async def on_cleanup(app):
     try:
         await bot.delete_webhook()
@@ -1258,10 +1150,6 @@ async def on_cleanup(app):
     await bot.session.close()
 
 
-# =========================
-# APP
-# =========================
-
 def create_app():
     app = web.Application()
 
@@ -1270,11 +1158,7 @@ def create_app():
         "777maz-secret"
     )
 
-    app.router.add_get(
-        "/",
-        health
-    )
-
+    app.router.add_get("/", health)
     app.router.add_post(
         f"/webhook/{secret}",
         webhook
@@ -1286,18 +1170,11 @@ def create_app():
     return app
 
 
-# =========================
-# RUN
-# =========================
-
 if __name__ == "__main__":
     web.run_app(
         create_app(),
         host="0.0.0.0",
         port=int(
-            os.environ.get(
-                "PORT",
-                "10000"
-            )
+            os.environ.get("PORT", "10000")
         )
     )
