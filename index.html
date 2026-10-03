@@ -1,125 +1,182 @@
 <!doctype html>
 <html lang="uz">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>777MAZ Market</title>
 <style>
-*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:#f5f6f8;color:#171717}
-header{position:sticky;top:0;z-index:5;background:#fff;padding:16px;border-bottom:1px solid #eee}
-.logo{font-size:26px;font-weight:900}.sub{color:#777;font-size:13px;margin-top:3px}
-.search{margin-top:12px;width:100%;padding:13px 15px;border:0;border-radius:14px;background:#f0f1f3;font-size:16px}
-.container{max-width:1000px;margin:auto;padding:16px}.categories{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
-.cat{background:#fff;border:1px solid #eee;border-radius:14px;padding:12px 5px;text-align:center;cursor:pointer;font-size:12px}
-.cat b{display:block;font-size:24px;margin-bottom:5px}.products{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
-.card{background:#fff;border-radius:17px;padding:10px;box-shadow:0 2px 12px #0000000d}
-.pic{height:170px;border-radius:13px;background:#f0f1f3;display:flex;align-items:center;justify-content:center;font-size:58px;overflow:hidden}
-.pic img{width:100%;height:100%;object-fit:cover}.name{font-weight:750;margin-top:9px}.price{font-weight:900;margin-top:6px}
-.old{text-decoration:line-through;color:#888;font-size:13px}.tag{font-size:12px;margin-top:5px}
-.add{width:100%;margin-top:9px;background:#111;color:#fff;font-weight:700;padding:12px;border:0;border-radius:12px}
-.cart{position:fixed;right:16px;bottom:18px;background:#111;color:#fff;border:0;border-radius:25px;padding:14px 18px;font-weight:800}
-.panel{position:fixed;inset:0;background:#0008;display:none;z-index:20}.box{background:#fff;position:absolute;bottom:0;left:0;right:0;max-height:92vh;overflow:auto;border-radius:22px 22px 0 0;padding:18px}
-input,select,textarea{width:100%;padding:12px;border:1px solid #ddd;border-radius:12px;margin:6px 0 10px;font-size:16px}
-.primary{width:100%;padding:13px;border:0;border-radius:12px;background:#111;color:#fff;font-weight:800;margin-top:5px}
-.secondary{width:100%;padding:12px;border:1px solid #ddd;border-radius:12px;background:#fff;margin-top:7px}
-.item{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #eee}
-.loc{background:#f0f7ff;padding:11px;border-radius:12px;margin:8px 0}
-@media(max-width:520px){.categories{grid-template-columns:repeat(3,1fr)}.pic{height:145px}}
+*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:#f6f7f9;color:#171717}
+header{background:#fff;padding:18px 16px 12px;position:sticky;top:0;z-index:5;border-bottom:1px solid #eee}
+.logo{font-size:25px;font-weight:800}.sub{color:#777;font-size:13px;margin-top:3px}
+.search{margin-top:14px;background:#f1f2f4;border-radius:14px;padding:12px 14px;border:0;width:100%;font-size:16px;outline:none}
+.container{padding:16px;max-width:900px;margin:auto}h2{font-size:20px;margin:8px 0 12px}
+.categories{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
+.cat{background:#fff;border:1px solid #eee;border-radius:14px;padding:13px 7px;text-align:center;cursor:pointer;font-size:12px}
+.cat b{display:block;font-size:24px;margin-bottom:6px}
+.products{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.card{background:#fff;border-radius:16px;padding:10px;box-shadow:0 2px 10px #00000008}
+.pic{height:150px;border-radius:12px;background:#f1f2f4;display:flex;align-items:center;justify-content:center;font-size:52px;overflow:hidden}
+.pic img{width:100%;height:100%;object-fit:cover}
+.name{font-weight:700;margin-top:9px;line-height:1.2}.price{font-weight:800;margin-top:6px}
+.old{color:#999;text-decoration:line-through;font-size:13px;margin-top:4px}
+button{border:0;border-radius:11px;padding:10px 12px;cursor:pointer}
+.add{width:100%;margin-top:9px;background:#111;color:#fff;font-weight:700}
+.cart{position:fixed;right:16px;bottom:18px;background:#111;color:#fff;border-radius:25px;padding:14px 18px;font-weight:700;box-shadow:0 5px 20px #0003}
+.modal{display:none;position:fixed;inset:0;background:#0008;z-index:20;align-items:flex-end;justify-content:center}
+.sheet{background:#fff;width:100%;max-width:650px;border-radius:22px 22px 0 0;padding:18px;max-height:90vh;overflow:auto}
+input,textarea,select{width:100%;padding:12px;border:1px solid #ddd;border-radius:11px;margin:6px 0 10px;font-size:15px}
+.row{display:flex;gap:8px}.row>*{flex:1}.secondary{background:#eee}.primary{background:#111;color:#fff}
+.cartrow{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid #eee}
+.qty button{padding:5px 9px;background:#eee}.total{font-size:20px;font-weight:800;margin:15px 0}
+@media(max-width:520px){.categories{grid-template-columns:repeat(3,1fr)}.products{grid-template-columns:repeat(2,1fr)}}
 </style>
 </head>
 <body>
 <header>
-<div class="logo">777MAZ Market</div><div class="sub">Sifatli mahsulotlar — qulay xarid</div>
-<input id="search" class="search" placeholder="🔎 Mahsulot izlash..." oninput="render()">
+  <div class="logo">777MAZ Market</div>
+  <div class="sub">Sifatli mahsulotlar — qulay xarid</div>
+  <input id="search" class="search" placeholder="🔎 Mahsulot izlash..." oninput="render()">
 </header>
+
 <main class="container">
-<h3>Kategoriyalar</h3><div id="cats" class="categories"></div>
-<h3>Mahsulotlar</h3><div id="products" class="products"></div>
+  <h2>Kategoriyalar</h2>
+  <div class="categories">
+    <div class="cat" onclick="setCat('')"><b>🛍️</b>Barchasi</div>
+    <div class="cat" onclick="setCat('🥤 Ichimliklar')"><b>🥤</b>Ichimliklar</div>
+    <div class="cat" onclick="setCat('🍫 Shirinliklar')"><b>🍫</b>Shirinliklar</div>
+    <div class="cat" onclick="setCat('🍎 Mevalar')"><b>🍎</b>Mevalar</div>
+    <div class="cat" onclick="setCat('🥕 Sabzavotlar')"><b>🥕</b>Sabzavotlar</div>
+    <div class="cat" onclick="setCat('👶 Bolalar ovqati')"><b>👶</b>Bolalar ovqati</div>
+    <div class="cat" onclick="setCat('🍳 Oshxona mahsulotlari')"><b>🍳</b>Oshxona</div>
+    <div class="cat" onclick="setCat('🧴 Gellar va shampunlar')"><b>🧴</b>Gellar</div>
+  </div>
+  <h2 style="margin-top:22px">Mahsulotlar</h2>
+  <div id="products" class="products">Yuklanmoqda...</div>
 </main>
 
 <button class="cart" onclick="openCart()">🛒 Savat <span id="count">0</span></button>
 
-<div id="panel" class="panel" onclick="if(event.target.id==='panel')closePanel()">
-<div class="box">
-<h2>🛒 Savat va buyurtma</h2><div id="cartRows"></div>
-<div id="checkout" style="display:none">
-<hr><h3>📦 Yetkazib berish</h3>
-<input id="name" placeholder="Ismingiz">
-<input id="phone" placeholder="Telefon raqam">
-<textarea id="address" placeholder="Ko‘cha, uy, xonadon"></textarea>
-<div class="loc">📍 <b id="locText">Lokatsiya olinmagan</b></div>
-<button class="primary" onclick="getLocation()">📍 Lokatsiyamni aniqlash</button>
-<select id="payment"><option>💵 Naqd pul</option><option>💳 Karta orqali</option><option>🏪 Joyida to‘lov</option></select>
-<button class="primary" onclick="sendOrder()">✅ Buyurtmani tasdiqlash</button>
+<div id="modal" class="modal">
+  <div class="sheet">
+    <h2 id="modalTitle">🛒 Savat</h2>
+    <div id="cartItems"></div>
+    <div id="checkout" style="display:none">
+      <div class="total">Jami: <span id="total">0</span> so‘m</div>
+      <input id="name" placeholder="Ismingiz">
+      <input id="phone" placeholder="Telefon raqamingiz">
+      <textarea id="address" placeholder="Manzilingiz"></textarea>
+      <select id="payment">
+        <option value="Naqd pul">💵 Naqd pul</option>
+        <option value="Karta orqali">💳 Karta orqali</option>
+        <option value="Joyida to‘lov">🏪 Joyida to‘lov</option>
+      </select>
+      <button class="primary" style="width:100%;margin-top:5px" onclick="sendOrder()">✅ Buyurtma berish</button>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button class="secondary" style="flex:1" onclick="closeModal()">Yopish</button>
+      <button class="primary" id="checkoutBtn" style="flex:1" onclick="showCheckout()">Davom etish</button>
+    </div>
+  </div>
 </div>
-<button class="secondary" onclick="closePanel()">Yopish</button>
-</div></div>
 
 <script>
-let products=[], category='', cart={}, lat=null, lon=null;
-const icons={'🥤 Ichimliklar':'🥤','🍫 Shirinliklar':'🍫','🍎 Mevalar':'🍎','🥕 Sabzavotlar':'🥕','👶 Bolalar ovqati':'👶','🍳 Oshxona mahsulotlari':'🍳','🧴 Gellar va shampunlar':'🧴'};
+let products=[], category='', cart={};
+const emojiMap={
+  '🥤 Ichimliklar':'🥤','🍫 Shirinliklar':'🍫','🍎 Mevalar':'🍎',
+  '🥕 Sabzavotlar':'🥕','👶 Bolalar ovqati':'👶',
+  '🍳 Oshxona mahsulotlari':'🍳','🧴 Gellar va shampunlar':'🧴'
+};
 
-async function load(){
- const r=await fetch('/api/products'); const d=await r.json(); products=d.products||[];
- const s=await fetch('/api/settings'); const st=await s.json();
- document.getElementById('cats').innerHTML='<div class="cat" onclick="setCat(\'\')"><b>🛍️</b>Barchasi</div>'+
- Object.keys(icons).map(c=>`<div class="cat" onclick="setCat('${c.replaceAll("'","\\'")}')"><b>${icons[c]}</b>${c.replace(/^.. /,'')}</div>`).join('');
- render();
-}
+function money(n){return Number(n||0).toLocaleString('uz-UZ')+' so‘m'}
 function setCat(c){category=c;render()}
-function money(n){return Number(n).toLocaleString('uz-UZ')+' so‘m'}
+function getEmoji(p){return emojiMap[p.category] || '🛍️'}
+
+async function loadProducts(){
+  try{
+    const r=await fetch('/api/products',{cache:'no-store'});
+    const d=await r.json();
+    products=d.products||[];
+    render();
+  }catch(e){
+    document.getElementById('products').innerHTML='<div>Mahsulotlarni yuklashda xatolik.</div>';
+  }
+}
+
 function render(){
- const q=document.getElementById('search').value.toLowerCase();
- const list=products.filter(p=>(!category||p.category===category)&&p.name.toLowerCase().includes(q));
- document.getElementById('products').innerHTML=list.map(p=>{
-   const image=p.image_file_id?'':'';
-   const tag=p.is_discount?`<div class="tag">🏷️ Chegirma</div>`:(p.is_new?`<div class="tag">🆕 Yangi</div>`:'');
-   return `<div class="card"><div class="pic">${icons[p.category]||'🛍️'}</div>
-   <div class="name">${esc(p.name)}</div>${p.is_discount&&p.old_price?`<div class="old">${money(p.old_price)}</div>`:''}
-   <div class="price">${money(p.price)}</div>${tag}<button class="add" onclick="add(${p.id})">🛒 Savatga</button></div>`;
- }).join('')||'<p>Mahsulot topilmadi.</p>';
- updateCount();
+  const q=document.getElementById('search').value.toLowerCase();
+  const list=products.filter(p=>
+    (!category||p.category===category) &&
+    String(p.name).toLowerCase().includes(q)
+  );
+  document.getElementById('products').innerHTML=list.map(p=>{
+    const image=p.image_file_id;
+    return `<div class="card">
+      <div class="pic">${image ? '<span>'+getEmoji(p)+'</span>' : getEmoji(p)}</div>
+      <div class="name">${escapeHtml(p.name)}</div>
+      ${p.old_price ? '<div class="old">'+money(p.old_price)+'</div>' : ''}
+      <div class="price">${money(p.price)}</div>
+      <button class="add" onclick="add(${p.id})">🛒 Savatga</button>
+    </div>`;
+  }).join('') || '<div>Mahsulot topilmadi.</div>';
 }
-function esc(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
 function add(id){cart[id]=(cart[id]||0)+1;updateCount()}
-function updateCount(){document.getElementById('count').textContent=Object.values(cart).reduce((a,b)=>a+b,0)}
+function updateCount(){
+  document.getElementById('count').textContent=Object.values(cart).reduce((a,b)=>a+b,0)
+}
 function openCart(){
- document.getElementById('panel').style.display='block';
- document.getElementById('checkout').style.display='none';
- drawCart();
+  document.getElementById('modalTitle').textContent='🛒 Savat';
+  document.getElementById('checkout').style.display='none';
+  document.getElementById('checkoutBtn').style.display='block';
+  renderCart(); document.getElementById('modal').style.display='flex';
 }
-function drawCart(){
- const ids=Object.keys(cart); let total=0;
- document.getElementById('cartRows').innerHTML=ids.length?ids.map(id=>{
-   const p=products.find(x=>x.id==id), q=cart[id]; total+=p.price*q;
-   return `<div class="item"><span>${esc(p.name)}<br>${q} × ${money(p.price)}</span><b>${money(p.price*q)}<br>
-   <button onclick="cart[${id}]=Math.max(0,(cart[${id}]||0)-1);if(!cart[${id}])delete cart[${id}];drawCart();updateCount()">−</button>
-   <button onclick="add(${id});drawCart()">+</button></b></div>`;
- }).join('')+`<h3>Jami: ${money(total)}</h3><button class="primary" onclick="showCheckout()">📝 Buyurtma berish</button>`:'<p>Savat hozircha bo‘sh.</p>';
+function closeModal(){document.getElementById('modal').style.display='none'}
+function renderCart(){
+  let total=0, html='';
+  for(const [id,qty] of Object.entries(cart)){
+    const p=products.find(x=>x.id==id); if(!p) continue;
+    total+=p.price*qty;
+    html+=`<div class="cartrow"><div><b>${escapeHtml(p.name)}</b><br>${money(p.price*qty)}</div>
+      <div class="qty"><button onclick="changeQty(${p.id},-1)">−</button>
+      <b style="padding:0 8px">${qty}</b>
+      <button onclick="changeQty(${p.id},1)">+</button></div></div>`;
+  }
+  document.getElementById('cartItems').innerHTML=html||'<div>Savat hozircha bo‘sh.</div>';
+  document.getElementById('total').textContent=total.toLocaleString('uz-UZ');
 }
-function showCheckout(){document.getElementById('checkout').style.display='block'}
-function closePanel(){document.getElementById('panel').style.display='none'}
-function getLocation(){
- if(!navigator.geolocation){alert('Telefon GPS lokatsiyasini qo‘llamaydi.');return}
- document.getElementById('locText').textContent='Aniqlanmoqda...';
- navigator.geolocation.getCurrentPosition(pos=>{
-   lat=pos.coords.latitude;lon=pos.coords.longitude;
-   document.getElementById('locText').textContent=`${lat.toFixed(6)}, ${lon.toFixed(6)}`;
-   document.getElementById('address').value=document.getElementById('address').value||`https://maps.google.com/?q=${lat},${lon}`;
- },err=>{document.getElementById('locText').textContent='Lokatsiyaga ruxsat berilmadi';alert('Brauzerda lokatsiyaga ruxsat bering.');},{enableHighAccuracy:true,timeout:10000});
+function changeQty(id,d){
+  cart[id]=(cart[id]||0)+d;
+  if(cart[id]<=0) delete cart[id];
+  updateCount(); renderCart();
+}
+function showCheckout(){
+  if(!Object.keys(cart).length){alert('Savat hozircha bo‘sh.');return}
+  document.getElementById('checkout').style.display='block';
+  document.getElementById('checkoutBtn').style.display='none';
+  document.getElementById('modalTitle').textContent='📝 Buyurtma';
 }
 async function sendOrder(){
- const name=document.getElementById('name').value.trim(),phone=document.getElementById('phone').value.trim(),address=document.getElementById('address').value.trim();
- if(!name||!phone){alert('Ism va telefonni kiriting.');return}
- if(!Object.keys(cart).length){alert('Savat bo‘sh.');return}
- const items=Object.entries(cart).map(([id,quantity])=>({id:Number(id),quantity}));
- const r=await fetch('/api/order',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-   name,phone,address,latitude:lat,longitude:lon,payment_method:document.getElementById('payment').value,items
- })});
- const d=await r.json();
- if(!d.ok){alert(d.error||'Xatolik');return}
- cart={};lat=null;lon=null;updateCount();closePanel();
- alert(`✅ Buyurtma №${d.order_id} qabul qilindi!\\n💰 ${money(d.total)}\\nTez orada siz bilan bog‘lanamiz.`);
+  const items=Object.entries(cart).map(([id,quantity])=>({id:Number(id),quantity}));
+  const payload={
+    name:document.getElementById('name').value.trim(),
+    phone:document.getElementById('phone').value.trim(),
+    address:document.getElementById('address').value.trim(),
+    payment_method:document.getElementById('payment').value,
+    items
+  };
+  if(!payload.name||!payload.phone){alert('Ism va telefonni kiriting.');return}
+  try{
+    const r=await fetch('/api/order',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const d=await r.json();
+    if(!d.ok){alert(d.error||'Buyurtma yuborilmadi.');return}
+    alert('✅ Buyurtma qabul qilindi! №'+d.order_id+'\nJami: '+money(d.total));
+    cart={}; updateCount(); closeModal();
+  }catch(e){alert('Server bilan aloqa bo‘lmadi.')}
 }
-load();
+loadProducts();
 </script>
-</body></html>
+</body>
+</html>
