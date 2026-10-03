@@ -33,7 +33,7 @@ async def supabase_request(method, path, payload=None):
         "apikey": SUPABASE_SECRET_KEY,
         "Authorization": f"Bearer {SUPABASE_SECRET_KEY}",
         "Content-Type": "application/json",
-        "Prefer": "return=representation",
+        "Prefer": "return=representation,resolution=merge-duplicates",
     }
 
     async with aiohttp.ClientSession() as session:
@@ -349,7 +349,7 @@ async def admin_photo(m: Message):
 
     if SUPABASE_URL and SUPABASE_SECRET_KEY:
         try:
-            await supabase_request("POST", "products", {
+            await supabase_request("POST", "products?on_conflict=id", {
                 "id": pid,
                 "name": s["name"],
                 "price": s["price"],
@@ -814,6 +814,30 @@ async def api_products(request):
     con.close()
     return web.json_response({"products": [product_dict(r) for r in rows]})
 
+async def api_product_image(request):
+    file_id = request.query.get("file_id", "").strip()
+    if not file_id:
+        return web.Response(status=400, text="file_id kerak")
+
+    try:
+        tg_file = await bot.get_file(file_id)
+        file_path = tg_file.file_path
+        if not file_path:
+            return web.Response(status=404, text="Rasm topilmadi")
+
+        url = f"https://api.telegram.org/file/bot{TOKEN}/{file_path}"
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as response:
+                if response.status != 200:
+                    return web.Response(status=404, text="Rasmni yuklab bo‘lmaydi")
+                data = await response.read()
+                content_type = response.headers.get("Content-Type", "image/jpeg")
+                return web.Response(body=data, content_type=content_type)
+    except Exception as e:
+        print("Product image error:", repr(e))
+        return web.Response(status=404, text="Rasm topilmadi")
+
+
 async def api_settings(request):
     return web.json_response({"phone":setting("contact_phone",CONTACT_PHONE),
                               "address":setting("shop_address",DEFAULT_ADDRESS),
@@ -1025,6 +1049,7 @@ def create_app():
     app.router.add_get("/",web_index)
     app.router.add_get("/health",health)
     app.router.add_get("/api/products",api_products)
+    app.router.add_get("/api/product-image",api_product_image)
     app.router.add_get("/api/settings",api_settings)
     app.router.add_post("/api/order",api_order)
     app.router.add_post(f"/webhook/{secret}",webhook)
