@@ -760,26 +760,78 @@ async def api_order(request):
 
 async def webhook(request):
     try:
-        data=await request.json()
-        update=Update.model_validate(data,context={"bot":bot})
-        await dp.feed_update(bot,update)
+        data = await request.json()
+        update_id = data.get("update_id")
+        print(f"Telegram webhook update received: {update_id}")
+
+        update = Update.model_validate(data, context={"bot": bot})
+        await dp.feed_update(bot, update)
+
+        print(f"Telegram webhook update processed: {update_id}")
         return web.Response(text="OK")
     except Exception as e:
-        print("Webhook error:",e)
-        return web.Response(text="ERROR",status=500)
+        print("Webhook error:", repr(e))
+        return web.Response(text="ERROR", status=500)
 
 
 async def health(request):
-    return web.Response(text="777MAZ bot is running")
+    try:
+        info = await bot.get_webhook_info()
+        return web.json_response({
+            "ok": True,
+            "service": "777MAZ bot",
+            "webhook_url": info.url,
+            "pending_updates": info.pending_update_count,
+            "last_error": info.last_error_message,
+            "last_error_date": info.last_error_date,
+        })
+    except Exception as e:
+        return web.json_response({
+            "ok": False,
+            "service": "777MAZ bot",
+            "error": repr(e),
+        }, status=500)
 
 
 async def on_startup(app):
-    init_db(); seed_products()
-    base=os.environ.get("RENDER_EXTERNAL_URL")
-    if not base: raise RuntimeError("RENDER_EXTERNAL_URL topilmadi")
-    secret=os.environ.get("WEBHOOK_SECRET","777maz-secret")
-    url=f"{base}/webhook/{secret}"
-    await bot.set_webhook(url)
+    init_db()
+    seed_products()
+
+    base = os.environ.get("RENDER_EXTERNAL_URL")
+    if not base:
+        raise RuntimeError("RENDER_EXTERNAL_URL topilmadi")
+
+    secret = os.environ.get("WEBHOOK_SECRET", "777maz-secret")
+    url = f"{base.rstrip('/')}/webhook/{secret}"
+
+    try:
+        info_before = await bot.get_webhook_info()
+        print(
+            "Webhook before set:",
+            "url=", info_before.url,
+            "pending=", info_before.pending_update_count,
+            "last_error=", info_before.last_error_message
+        )
+    except Exception as e:
+        print("Webhook info error:", repr(e))
+
+    await bot.set_webhook(
+        url,
+        drop_pending_updates=False,
+        allowed_updates=dp.resolve_used_update_types()
+    )
+
+    try:
+        info_after = await bot.get_webhook_info()
+        print(
+            "Webhook after set:",
+            "url=", info_after.url,
+            "pending=", info_after.pending_update_count,
+            "last_error=", info_after.last_error_message
+        )
+    except Exception as e:
+        print("Webhook after-set info error:", repr(e))
+
     print(f"Webhook set: {url}")
 
 
