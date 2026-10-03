@@ -3,6 +3,7 @@ import asyncio
 import sqlite3
 from datetime import datetime
 from urllib.parse import quote
+import aiohttp
 from aiohttp import web
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart, Command
@@ -21,6 +22,38 @@ if not TOKEN:
 bot = Bot(TOKEN)
 dp = Dispatcher()
 DB_NAME = "shop.db"
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
+SUPABASE_SECRET_KEY = os.getenv("SUPABASE_SECRET_KEY", "").strip()
+
+async def supabase_request(method, path, payload=None):
+    if not SUPABASE_URL or not SUPABASE_SECRET_KEY:
+        return None
+
+    headers = {
+        "apikey": SUPABASE_SECRET_KEY,
+        "Authorization": f"Bearer {SUPABASE_SECRET_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "return=representation",
+    }
+
+    async with aiohttp.ClientSession() as session:
+        kwargs = {"headers": headers}
+        if payload is not None:
+            kwargs["json"] = payload
+
+        async with session.request(
+            method,
+            f"{SUPABASE_URL}/rest/v1/{path}",
+            **kwargs
+        ) as response:
+            if response.status >= 400:
+                error = await response.text()
+                raise RuntimeError(f"Supabase {response.status}: {error}")
+
+            if response.status == 204:
+                return []
+
+            return await response.json()
 ADMIN_ID = os.getenv("ADMIN_ID", "8082110485").strip()
 CONTACT_PHONE = os.getenv("CONTACT_PHONE", "+998 99 690 24 07")
 DEFAULT_ADDRESS = os.getenv(
@@ -292,19 +325,57 @@ async def admin_cancel(c):
 
 @dp.message(F.photo)
 async def admin_photo(m: Message):
-    uid=m.from_user.id
-    if not is_admin(uid): return
-    s=admin_states.get(uid)
-    if not s or s.get("step")!="photo": return
-    con=db(); cur=con.cursor()
-    cur.execute("""INSERT INTO products(name,price,category,image_file_id,old_price,is_discount,is_new)
-        VALUES(?,?,?,?,?,?,?)""",(s["name"],s["price"],s["category"],m.photo[-1].file_id,
-        s.get("old_price",0),s.get("is_discount",0),s.get("is_new",0)))
-    pid=cur.lastrowid; con.commit(); con.close()
-    admin_states.pop(uid,None)
-    await m.answer(f"✅ Mahsulot qo‘shildi!\nID: {pid}\n{s['name']}\n{s['price']:,} so'm",
-                   reply_markup=admin_keyboard())
+    uid = m.from_user.id
+    if not is_admin(uid):
+        return
 
+    s = admin_states.get(uid)
+    if not s or s.get("step") != "photo":
+        return
+
+    image_id = m.photo[-1].file_id
+
+    con = db()
+    cur = con.cursor()
+    cur.execute("""INSERT INTO products
+        (name,price,category,image_file_id,old_price,is_discount,is_new)
+        VALUES(?,?,?,?,?,?,?)""",
+        (s["name"], s["price"], s["category"], image_id,
+         s.get("old_price", 0), s.get("is_discount", 0), s.get("is_new", 0)))
+
+    pid = cur.lastrowid
+    con.commit()
+    con.close()
+
+    if SUPABASE_URL and SUPABASE_SECRET_KEY:
+        try:
+            await supabase_request("POST", "products", {
+                "id": pid,
+                "name": s["name"],
+                "price": s["price"],
+                "category": s["category"],
+                "image_file_id": image_id,
+                "old_price": s.get("old_price", 0),
+                "is_discount": bool(s.get("is_discount", 0)),
+                "is_new": bool(s.get("is_new", 0))
+            })
+        except Exception as e:
+            con = db()
+            con.execute("DELETE FROM products WHERE id=?", (pid,))
+            con.commit()
+            con.close()
+            await m.answer(f"❌ Supabase xatosi: {e}")
+            return
+
+    admin_states.pop(uid, None)
+
+    await m.answer(
+        f"✅ Mahsulot qo‘shildi!\n"
+        f"ID: {pid}\n"
+        f"{s['name']}\n"
+        f"{s['price']:,} so'm",
+        reply_markup=admin_keyboard()
+    )
 
 @dp.callback_query(F.data == "admin_list")
 async def admin_list(c):
@@ -332,14 +403,36 @@ async def admin_delete(c):
 
 @dp.callback_query(F.data.startswith("admin_del:"))
 async def admin_del(c):
-    if not is_admin(c.from_user.id): return
-    pid=int(c.data.split(":")[1]); con=db(); cur=con.cursor()
-    cur.execute("SELECT name FROM products WHERE id=?",(pid,)); r=cur.fetchone()
-    if r:
-        cur.execute("DELETE FROM cart WHERE product_id=?",(pid,))
-        cur.execute("DELETE FROM favorites WHERE product_id=?",(pid,))
-        cur.execute("DELETE FROM products WHERE id=?",(pid,)); con.commit()
-    con.close(); await c.answer("✅ O‘chirildi" if r else "Topilmadi",show_alert=True)
+    if not is_admin(c.from_user.id):
+        return
+
+    pid = int(c.data.split(":")[1])
+
+    con = db()
+    cur = con.cursor()
+    cur.execute("SELECT name FROM products WHERE id=?", (pid,))
+    r = cur.fetchone()
+
+    if not r:
+        con.close()
+        await c.answer("Topilmadi", show_alert=True)
+        return
+
+    if SUPABASE_URL and SUPABASE_SECRET_KEY:
+        try:
+            await supabase_request("DELETE", f"products?id=eq.{pid}")
+        except Exception as e:
+            con.close()
+            await c.answer(f"❌ Supabase xatosi: {e}", show_alert=True)
+            return
+
+    cur.execute("DELETE FROM cart WHERE product_id=?", (pid,))
+    cur.execute("DELETE FROM favorites WHERE product_id=?", (pid,))
+    cur.execute("DELETE FROM products WHERE id=?", (pid,))
+    con.commit()
+    con.close()
+
+    await c.answer("✅ O‘chirildi", show_alert=True)
     await admin_delete(c)
 
 
@@ -702,12 +795,24 @@ async def web_index(request):
 
 
 async def api_products(request):
-    con=db()
-    rows=con.execute("""SELECT id,name,price,category,image_file_id,old_price,is_discount,is_new
-        FROM products ORDER BY id DESC""").fetchall()
-    con.close()
-    return web.json_response({"products":[product_dict(r) for r in rows]})
+    if SUPABASE_URL and SUPABASE_SECRET_KEY:
+        try:
+            rows = await supabase_request(
+                "GET",
+                "products?select=id,name,price,category,image_file_id,old_price,is_discount,is_new&order=id.desc"
+            )
+            if rows is not None:
+                return web.json_response({"products": rows})
+        except Exception as e:
+            print("Supabase products error:", e)
 
+    con = db()
+    rows = con.execute("""
+        SELECT id,name,price,category,image_file_id,old_price,is_discount,is_new
+        FROM products ORDER BY id DESC
+    """).fetchall()
+    con.close()
+    return web.json_response({"products": [product_dict(r) for r in rows]})
 
 async def api_settings(request):
     return web.json_response({"phone":setting("contact_phone",CONTACT_PHONE),
@@ -848,9 +953,54 @@ async def webhook_keeper(app):
         await asyncio.sleep(10)
 
 
+async def sync_products():
+    if not SUPABASE_URL or not SUPABASE_SECRET_KEY:
+        return
+
+    try:
+        remote = await supabase_request(
+            "GET",
+            "products?select=id,name,price,category,image_file_id,old_price,is_discount,is_new&order=id"
+        )
+
+        if remote:
+            print("Supabase products already exist")
+            return
+
+        con = db()
+        rows = con.execute("""
+            SELECT id,name,price,category,image_file_id,old_price,is_discount,is_new
+            FROM products
+            ORDER BY id
+        """).fetchall()
+        con.close()
+
+        if not rows:
+            return
+
+        products = []
+
+        for r in rows:
+            products.append({
+                "id": r[0],
+                "name": r[1],
+                "price": r[2],
+                "category": r[3],
+                "image_file_id": r[4] or "",
+                "old_price": r[5] or 0,
+                "is_discount": bool(r[6]),
+                "is_new": bool(r[7])
+            })
+
+        await supabase_request("POST", "products", products)
+        print(f"Supabase sync: {len(products)} ta mahsulot yuklandi")
+
+    except Exception as e:
+        print("Supabase sync error:", repr(e))
 async def on_startup(app):
     init_db()
     seed_products()
+    await sync_products()
     await ensure_webhook()
     app["webhook_keeper_task"] = asyncio.create_task(webhook_keeper(app))
     print("Webhook keeper started")
