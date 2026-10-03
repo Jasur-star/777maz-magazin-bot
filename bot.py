@@ -33,7 +33,7 @@ async def supabase_request(method, path, payload=None):
         "apikey": SUPABASE_SECRET_KEY,
         "Authorization": f"Bearer {SUPABASE_SECRET_KEY}",
         "Content-Type": "application/json",
-        "Prefer": "return=representation,resolution=merge-duplicates",
+        "Prefer": "return=representation",
     }
 
     async with aiohttp.ClientSession() as session:
@@ -349,7 +349,7 @@ async def admin_photo(m: Message):
 
     if SUPABASE_URL and SUPABASE_SECRET_KEY:
         try:
-            await supabase_request("POST", "products?on_conflict=id", {
+            await supabase_request("POST", "products", {
                 "id": pid,
                 "name": s["name"],
                 "price": s["price"],
@@ -818,18 +818,15 @@ async def api_product_image(request):
     file_id = request.query.get("file_id", "").strip()
     if not file_id:
         return web.Response(status=400, text="file_id kerak")
-
     try:
         tg_file = await bot.get_file(file_id)
-        file_path = tg_file.file_path
-        if not file_path:
+        if not tg_file.file_path:
             return web.Response(status=404, text="Rasm topilmadi")
-
-        url = f"https://api.telegram.org/file/bot{TOKEN}/{file_path}"
+        url = f"https://api.telegram.org/file/bot{TOKEN}/{tg_file.file_path}"
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as response:
                 if response.status != 200:
-                    return web.Response(status=404, text="Rasmni yuklab bo‘lmaydi")
+                    return web.Response(status=404, text="Rasmni yuklab bo‘lmadi")
                 data = await response.read()
                 content_type = response.headers.get("Content-Type", "image/jpeg")
                 return web.Response(body=data, content_type=content_type)
