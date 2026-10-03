@@ -64,7 +64,7 @@ def init_db():
 
     # Existing databases are upgraded without deleting anything.
     for table, col, definition in [
-        ("products","category","TEXT DEFAULT '🍳 Oshxona mahsulotlari'),
+        ("products","category","TEXT DEFAULT '🍳 Oshxona mahsulotlari'"),
         ("products","image_file_id","TEXT"), ("products","old_price","INTEGER DEFAULT 0"),
         ("products","is_discount","INTEGER DEFAULT 0"), ("products","is_new","INTEGER DEFAULT 0"),
         ("orders","payment_method","TEXT DEFAULT 'Naqd'"),
