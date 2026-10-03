@@ -558,6 +558,12 @@ async def payment_info(c):
     await c.message.edit_text("💳 To‘lov: karta, naqd yoki joyida to‘lov.",reply_markup=back_home()); await c.answer()
 
 
+@dp.callback_query(F.data == "show_phone")
+async def show_phone(c):
+    phone = setting("contact_phone", CONTACT_PHONE)
+    await c.answer(f"📞 {phone}", show_alert=True)
+
+
 @dp.callback_query(F.data == "contact")
 async def contact(c):
     phone = setting("contact_phone", CONTACT_PHONE)
@@ -578,8 +584,8 @@ async def contact(c):
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
-            text="📞 Qo‘ng‘iroq qilish",
-            url=f"tel:{phone.replace(' ', '')}"
+            text="📞 Telefon raqami",
+            callback_data="show_phone"
         )],
         [InlineKeyboardButton(
             text="💬 Telegram",
