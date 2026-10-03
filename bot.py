@@ -1,5 +1,4 @@
 import os
-import asyncio
 import sqlite3
 from datetime import datetime
 from urllib.parse import quote
@@ -22,45 +21,76 @@ if not TOKEN:
 bot = Bot(TOKEN)
 dp = Dispatcher()
 DB_NAME = "shop.db"
+ADMIN_ID = os.getenv("ADMIN_ID")
+CONTACT_PHONE = os.getenv("CONTACT_PHONE", "+998 99 690 24 07")
+DEFAULT_ADDRESS = os.getenv("SHOP_ADDRESS", "Mirzo Ulug‘bek tumani")
+DEFAULT_TELEGRAM = os.getenv("SHOP_TELEGRAM", "")
+
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
-SUPABASE_SECRET_KEY = os.getenv("SUPABASE_SECRET_KEY", "").strip()
+SUPABASE_SECRET_KEY = os.getenv("SUPABASE_SECRET_KEY", "")
 
 async def supabase_request(method, path, payload=None):
     if not SUPABASE_URL or not SUPABASE_SECRET_KEY:
         return None
-
     headers = {
         "apikey": SUPABASE_SECRET_KEY,
         "Authorization": f"Bearer {SUPABASE_SECRET_KEY}",
         "Content-Type": "application/json",
         "Prefer": "return=representation",
     }
-
     async with aiohttp.ClientSession() as session:
         kwargs = {"headers": headers}
         if payload is not None:
             kwargs["json"] = payload
-
         async with session.request(
-            method,
-            f"{SUPABASE_URL}/rest/v1/{path}",
-            **kwargs
+            method, f"{SUPABASE_URL}/rest/v1/{path}", **kwargs
         ) as response:
             if response.status >= 400:
                 error = await response.text()
                 raise RuntimeError(f"Supabase {response.status}: {error}")
-
             if response.status == 204:
                 return []
-
             return await response.json()
-ADMIN_ID = os.getenv("ADMIN_ID", "8082110485").strip()
-CONTACT_PHONE = os.getenv("CONTACT_PHONE", "+998 99 690 24 07")
-DEFAULT_ADDRESS = os.getenv(
-    "SHOP_ADDRESS",
-    "Toshkent shahar, Mirzo Ulug‘bek tumani, Mirzo Ulug‘bek ko‘chasi, 107-uy, 1-xonadon"
-)
-DEFAULT_TELEGRAM = os.getenv("SHOP_TELEGRAM", "@online08981")
+
+async def sync_products():
+    """Initial sync: upload local products only when Supabase is empty."""
+    if not SUPABASE_URL or not SUPABASE_SECRET_KEY:
+        return
+    try:
+        remote = await supabase_request(
+            "GET",
+            "products?select=id,name,price,category,image_file_id,old_price,is_discount,is_new&order=id"
+        )
+        if remote:
+            print("Supabase products already exist")
+            return
+
+        con = db()
+        rows = con.execute("""
+            SELECT id,name,price,category,image_file_id,old_price,is_discount,is_new
+            FROM products ORDER BY id
+        """).fetchall()
+        con.close()
+
+        if not rows:
+            return
+
+        payload = [{
+            "id": r[0],
+            "name": r[1],
+            "price": r[2],
+            "category": r[3],
+            "image_file_id": r[4] or "",
+            "old_price": r[5] or 0,
+            "is_discount": bool(r[6]),
+            "is_new": bool(r[7]),
+        } for r in rows]
+
+        await supabase_request("POST", "products?on_conflict=id", payload)
+        print(f"Supabase sync: {len(payload)} ta mahsulot yuklandi")
+    except Exception as e:
+        print("Supabase sync error:", repr(e))
+
 
 CATEGORIES = [
     "🥤 Ichimliklar", "🍫 Shirinliklar", "🍎 Mevalar", "🥕 Sabzavotlar",
@@ -152,8 +182,7 @@ def seed_products():
     con.commit(); con.close()
 
 
-def is_admin(uid):
-    return str(uid).strip() == ADMIN_ID
+def is_admin(uid): return ADMIN_ID and str(uid) == str(ADMIN_ID)
 
 
 WEB_MARKET_URL = os.getenv("WEB_MARKET_URL", "https://seven77maz-magazin-bot-1.onrender.com")
@@ -342,14 +371,13 @@ async def admin_photo(m: Message):
         VALUES(?,?,?,?,?,?,?)""",
         (s["name"], s["price"], s["category"], image_id,
          s.get("old_price", 0), s.get("is_discount", 0), s.get("is_new", 0)))
-
     pid = cur.lastrowid
     con.commit()
     con.close()
 
     if SUPABASE_URL and SUPABASE_SECRET_KEY:
         try:
-            await supabase_request("POST", "products", {
+            await supabase_request("POST", "products?on_conflict=id", {
                 "id": pid,
                 "name": s["name"],
                 "price": s["price"],
@@ -357,7 +385,7 @@ async def admin_photo(m: Message):
                 "image_file_id": image_id,
                 "old_price": s.get("old_price", 0),
                 "is_discount": bool(s.get("is_discount", 0)),
-                "is_new": bool(s.get("is_new", 0))
+                "is_new": bool(s.get("is_new", 0)),
             })
         except Exception as e:
             con = db()
@@ -368,14 +396,11 @@ async def admin_photo(m: Message):
             return
 
     admin_states.pop(uid, None)
-
     await m.answer(
-        f"✅ Mahsulot qo‘shildi!\n"
-        f"ID: {pid}\n"
-        f"{s['name']}\n"
-        f"{s['price']:,} so'm",
+        f"✅ Mahsulot qo‘shildi!\nID: {pid}\n{s['name']}\n{s['price']:,} so'm",
         reply_markup=admin_keyboard()
     )
+
 
 @dp.callback_query(F.data == "admin_list")
 async def admin_list(c):
@@ -407,7 +432,6 @@ async def admin_del(c):
         return
 
     pid = int(c.data.split(":")[1])
-
     con = db()
     cur = con.cursor()
     cur.execute("SELECT name FROM products WHERE id=?", (pid,))
@@ -653,51 +677,12 @@ async def payment_info(c):
     await c.message.edit_text("💳 To‘lov: karta, naqd yoki joyida to‘lov.",reply_markup=back_home()); await c.answer()
 
 
-@dp.callback_query(F.data == "show_phone")
-async def show_phone(c):
-    phone = setting("contact_phone", CONTACT_PHONE)
-    await c.answer(f"📞 {phone}", show_alert=True)
-
-
 @dp.callback_query(F.data == "contact")
 async def contact(c):
-    phone = setting("contact_phone", CONTACT_PHONE)
-    addr = setting(
-        "shop_address",
-        "Toshkent shahar, Mirzo Ulug‘bek tumani, Mirzo Ulug‘bek ko‘chasi, 107-uy, 1-xonadon"
-    )
-    tg = setting("telegram", "@online08981")
-
-    map_url = "https://www.google.com/maps/search/?api=1&query=" + quote(addr)
-
-    text = (
-        "☎️ BIZ BILAN ALOQA\n\n"
-        f"📞 Telefon: {phone}\n"
-        f"💬 Telegram: {tg}\n"
-        f"📍 Manzil: {addr}"
-    )
-
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text="📞 Telefon raqami",
-            callback_data="show_phone"
-        )],
-        [InlineKeyboardButton(
-            text="💬 Telegram",
-            url="https://t.me/online08981"
-        )],
-        [InlineKeyboardButton(
-            text="📍 Xaritada ko‘rish",
-            url=map_url
-        )],
-        [InlineKeyboardButton(
-            text="🏠 Bosh menyu",
-            callback_data="home"
-        )]
-    ])
-
-    await c.message.edit_text(text, reply_markup=kb)
-    await c.answer()
+    phone=setting("contact_phone",CONTACT_PHONE); addr=setting("shop_address",DEFAULT_ADDRESS); tg=setting("telegram",DEFAULT_TELEGRAM)
+    text=f"📞 ALOQA\n\n📞 Telefon: {phone}\n📍 Manzil: {addr}"
+    if tg: text+=f"\n📱 Telegram: {tg}"
+    await c.message.edit_text(text,reply_markup=back_home()); await c.answer()
 
 
 @dp.callback_query(F.data == "profile")
@@ -804,35 +789,13 @@ async def api_products(request):
             if rows is not None:
                 return web.json_response({"products": rows})
         except Exception as e:
-            print("Supabase products error:", e)
+            print("Supabase products error:", repr(e))
 
     con = db()
-    rows = con.execute("""
-        SELECT id,name,price,category,image_file_id,old_price,is_discount,is_new
-        FROM products ORDER BY id DESC
-    """).fetchall()
+    rows = con.execute("""SELECT id,name,price,category,image_file_id,old_price,is_discount,is_new
+        FROM products ORDER BY id DESC""").fetchall()
     con.close()
-    return web.json_response({"products": [product_dict(r) for r in rows]})
-
-async def api_product_image(request):
-    file_id = request.query.get("file_id", "").strip()
-    if not file_id:
-        return web.Response(status=400, text="file_id kerak")
-    try:
-        tg_file = await bot.get_file(file_id)
-        if not tg_file.file_path:
-            return web.Response(status=404, text="Rasm topilmadi")
-        url = f"https://api.telegram.org/file/bot{TOKEN}/{tg_file.file_path}"
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as response:
-                if response.status != 200:
-                    return web.Response(status=404, text="Rasmni yuklab bo‘lmadi")
-                data = await response.read()
-                content_type = response.headers.get("Content-Type", "image/jpeg")
-                return web.Response(body=data, content_type=content_type)
-    except Exception as e:
-        print("Product image error:", repr(e))
-        return web.Response(status=404, text="Rasm topilmadi")
+    return web.json_response({"products":[product_dict(r) for r in rows]})
 
 
 async def api_settings(request):
@@ -841,202 +804,158 @@ async def api_settings(request):
                               "telegram":setting("telegram",DEFAULT_TELEGRAM)})
 
 
+async def api_product_image(request):
+    file_id = request.query.get("file_id", "").strip()
+    if not file_id:
+        return web.Response(status=400, text="file_id kerak")
+    try:
+        tg_file = await bot.get_file(file_id)
+        file_path = tg_file.file_path
+        if not file_path:
+            return web.Response(status=404, text="Rasm topilmadi")
+
+        url = f"https://api.telegram.org/file/bot{TOKEN}/{file_path}"
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as response:
+                if response.status != 200:
+                    return web.Response(status=404, text="Rasmni yuklab bo‘lmaydi")
+                data = await response.read()
+                content_type = response.headers.get("Content-Type", "image/jpeg")
+                return web.Response(body=data, content_type=content_type)
+    except Exception as e:
+        print("Product image error:", repr(e))
+        return web.Response(status=404, text="Rasm topilmadi")
+
+
 async def api_order(request):
     try:
-        data=await request.json()
-        name=str(data.get("name","")).strip()
-        phone=str(data.get("phone","")).strip()
-        address=str(data.get("address","")).strip()
-        lat=data.get("latitude"); lon=data.get("longitude")
-        payment=str(data.get("payment_method","Naqd"))
-        items=data.get("items",[])
+        data = await request.json()
+        name = str(data.get("name", "")).strip()
+        phone = str(data.get("phone", "")).strip()
+        address = str(data.get("address", "")).strip()
+        lat = data.get("latitude")
+        lon = data.get("longitude")
+        payment = str(data.get("payment_method", "Naqd")).strip()
+        items = data.get("items", [])
+
         if not name or not phone or not items:
-            return web.json_response({"ok":False,"error":"Ism, telefon va savat kerak."},status=400)
+            return web.json_response(
+                {"ok": False, "error": "Ism, telefon va savat kerak."}, status=400
+            )
 
-        con=db(); valid=[]; total=0
-        for item in items:
-            pid=int(item["id"]); qty=max(1,min(99,int(item.get("quantity",1))))
-            r=con.execute("SELECT name,price FROM products WHERE id=?",(pid,)).fetchone()
-            if r:
-                valid.append((r[0],r[1],qty)); total += r[1]*qty
+        valid = []
+        total = 0
+
+        # Web Market always verifies products against Supabase first.
+        if SUPABASE_URL and SUPABASE_SECRET_KEY:
+            for item in items:
+                pid = int(item["id"])
+                qty = max(1, min(99, int(item.get("quantity", 1))))
+                rows = await supabase_request(
+                    "GET",
+                    f"products?id=eq.{pid}&select=id,name,price"
+                )
+                if rows:
+                    p = rows[0]
+                    price = int(p["price"])
+                    valid.append((p["name"], price, qty))
+                    total += price * qty
+
+        # Fallback for temporary Supabase/network problems.
         if not valid:
-            con.close(); return web.json_response({"ok":False,"error":"Mahsulot topilmadi."},status=400)
+            con = db()
+            for item in items:
+                pid = int(item["id"])
+                qty = max(1, min(99, int(item.get("quantity", 1))))
+                r = con.execute(
+                    "SELECT name,price FROM products WHERE id=?", (pid,)
+                ).fetchone()
+                if r:
+                    valid.append((r[0], r[1], qty))
+                    total += r[1] * qty
+            con.close()
 
-        items_text="".join(f"• {n} — {q} dona — {p*q:,} so‘m\n" for n,p,q in valid)
-        created=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        cur=con.cursor()
-        cur.execute("""INSERT INTO orders(user_id,name,phone,address,items,total,status,created_at,
-            payment_method,latitude,longitude) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
-            (0,name,phone,address,items_text,total,"Yangi",created,payment,lat,lon))
-        oid=cur.lastrowid; con.commit(); con.close()
+        if not valid:
+            return web.json_response(
+                {"ok": False, "error": "Mahsulot topilmadi."}, status=400
+            )
+
+        items_text = "".join(
+            f"• {n} — {q} dona — {p*q:,} so‘m\n"
+            for n, p, q in valid
+        )
+        created = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        con = db()
+        cur = con.cursor()
+        cur.execute("""INSERT INTO orders(
+            user_id,name,phone,address,items,total,status,created_at,
+            payment_method,latitude,longitude
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+            (0, name, phone, address, items_text, total, "Yangi",
+             created, payment, lat, lon)
+        )
+        oid = cur.lastrowid
+        con.commit()
+        con.close()
 
         if ADMIN_ID:
-            msg=f"""🌐 WEB MARKETDAN YANGI BUYURTMA №{oid}
+            msg = f"""🌐 WEB MARKETDAN YANGI BUYURTMA №{oid}
 
 👤 {name}
 📞 {phone}
-📍 {address}
+📍 {address or 'Kiritilmagan'}
 💳 {payment}
 
 🛍 {items_text}💰 Jami: {total:,} so‘m
 🕐 {created}"""
             try:
-                await bot.send_message(int(ADMIN_ID),msg)
+                await bot.send_message(int(ADMIN_ID), msg)
                 if lat is not None and lon is not None:
-                    await bot.send_location(int(ADMIN_ID),float(lat),float(lon))
-            except Exception as e: print("Web order admin xabari:",e)
+                    await bot.send_location(
+                        int(ADMIN_ID), float(lat), float(lon)
+                    )
+            except Exception as e:
+                print("Web order admin xabari:", repr(e))
 
-        return web.json_response({"ok":True,"order_id":oid,"total":total})
+        return web.json_response({"ok": True, "order_id": oid, "total": total})
+
     except Exception as e:
-        print("Web order error:",e)
-        return web.json_response({"ok":False,"error":"Server xatosi."},status=500)
+        print("Web order error:", repr(e))
+        return web.json_response(
+            {"ok": False, "error": "Server xatosi."}, status=500
+        )
 
 
 async def webhook(request):
     try:
-        data = await request.json()
-        update_id = data.get("update_id")
-        print(f"Telegram webhook update received: {update_id}")
-
-        update = Update.model_validate(data, context={"bot": bot})
-        await dp.feed_update(bot, update)
-
-        print(f"Telegram webhook update processed: {update_id}")
+        data=await request.json()
+        update=Update.model_validate(data,context={"bot":bot})
+        await dp.feed_update(bot,update)
         return web.Response(text="OK")
     except Exception as e:
-        print("Webhook error:", repr(e))
-        return web.Response(text="ERROR", status=500)
+        print("Webhook error:",e)
+        return web.Response(text="ERROR",status=500)
 
 
 async def health(request):
-    try:
-        info = await bot.get_webhook_info()
-        return web.json_response({
-            "ok": True,
-            "service": "777MAZ bot",
-            "webhook_url": info.url,
-            "pending_updates": info.pending_update_count,
-            "last_error": info.last_error_message,
-            "last_error_date": info.last_error_date,
-        })
-    except Exception as e:
-        return web.json_response({
-            "ok": False,
-            "service": "777MAZ bot",
-            "error": repr(e),
-        }, status=500)
+    return web.Response(text="777MAZ bot is running")
 
 
-async def ensure_webhook():
-    base = os.environ.get("RENDER_EXTERNAL_URL")
-    if not base:
-        raise RuntimeError("RENDER_EXTERNAL_URL topilmadi")
-
-    secret = os.environ.get("WEBHOOK_SECRET", "777maz-secret")
-    url = f"{base.rstrip('/')}/webhook/{secret}"
-    allowed = dp.resolve_used_update_types()
-
-    try:
-        info = await bot.get_webhook_info()
-        print(
-            "Webhook check:",
-            "url=", info.url,
-            "pending=", info.pending_update_count,
-            "last_error=", info.last_error_message
-        )
-        if info.url != url:
-            print("Webhook missing/wrong. Setting again:", url)
-            await bot.set_webhook(
-                url,
-                drop_pending_updates=False,
-                allowed_updates=allowed
-            )
-            info = await bot.get_webhook_info()
-            print(
-                "Webhook repaired:",
-                "url=", info.url,
-                "pending=", info.pending_update_count,
-                "last_error=", info.last_error_message
-            )
-    except Exception as e:
-        print("Webhook ensure error:", repr(e))
-        raise
-
-    return url
-
-
-async def webhook_keeper(app):
-    while True:
-        try:
-            await ensure_webhook()
-        except Exception as e:
-            print("Webhook keeper error:", repr(e))
-        await asyncio.sleep(10)
-
-
-async def sync_products():
-    if not SUPABASE_URL or not SUPABASE_SECRET_KEY:
-        return
-
-    try:
-        remote = await supabase_request(
-            "GET",
-            "products?select=id,name,price,category,image_file_id,old_price,is_discount,is_new&order=id"
-        )
-
-        if remote:
-            print("Supabase products already exist")
-            return
-
-        con = db()
-        rows = con.execute("""
-            SELECT id,name,price,category,image_file_id,old_price,is_discount,is_new
-            FROM products
-            ORDER BY id
-        """).fetchall()
-        con.close()
-
-        if not rows:
-            return
-
-        products = []
-
-        for r in rows:
-            products.append({
-                "id": r[0],
-                "name": r[1],
-                "price": r[2],
-                "category": r[3],
-                "image_file_id": r[4] or "",
-                "old_price": r[5] or 0,
-                "is_discount": bool(r[6]),
-                "is_new": bool(r[7])
-            })
-
-        await supabase_request("POST", "products", products)
-        print(f"Supabase sync: {len(products)} ta mahsulot yuklandi")
-
-    except Exception as e:
-        print("Supabase sync error:", repr(e))
 async def on_startup(app):
-    init_db()
-    seed_products()
+    init_db(); seed_products()
     await sync_products()
-    await ensure_webhook()
-    app["webhook_keeper_task"] = asyncio.create_task(webhook_keeper(app))
-    print("Webhook keeper started")
+    base=os.environ.get("RENDER_EXTERNAL_URL")
+    if not base: raise RuntimeError("RENDER_EXTERNAL_URL topilmadi")
+    secret=os.environ.get("WEBHOOK_SECRET","777maz-secret")
+    url=f"{base}/webhook/{secret}"
+    await bot.set_webhook(url)
+    print(f"Webhook set: {url}")
 
 
 async def on_cleanup(app):
-    task = app.get("webhook_keeper_task")
-    if task:
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
-    # Muhim: Render restart/sleep paytida webhookni o‘chirib yubormaymiz.
-    # Shunda Telegram keyingi ishga tushishda shu URL'ga update yuborishda davom etadi.
+    try: await bot.delete_webhook()
+    except Exception as e: print("Webhook delete error:",e)
     await bot.session.close()
 
 
