@@ -5,178 +5,142 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>777MAZ Market</title>
 <style>
-*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:#f6f7f9;color:#171717}
-header{background:#fff;padding:18px 16px 12px;position:sticky;top:0;z-index:5;border-bottom:1px solid #eee}
-.logo{font-size:25px;font-weight:800}.sub{color:#777;font-size:13px;margin-top:3px}
-.search{margin-top:14px;background:#f1f2f4;border-radius:14px;padding:12px 14px;border:0;width:100%;font-size:16px;outline:none}
-.container{padding:16px;max-width:900px;margin:auto}h2{font-size:20px;margin:8px 0 12px}
-.categories{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
-.cat{background:#fff;border:1px solid #eee;border-radius:14px;padding:13px 7px;text-align:center;cursor:pointer;font-size:12px}
-.cat b{display:block;font-size:24px;margin-bottom:6px}
-.products{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
-.card{background:#fff;border-radius:16px;padding:10px;box-shadow:0 2px 10px #00000008}
-.pic{height:150px;border-radius:12px;background:#f1f2f4;display:flex;align-items:center;justify-content:center;font-size:52px;overflow:hidden}
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,sans-serif;background:#f5f5f5;color:#222}
+header{position:sticky;top:0;z-index:5;background:#fff;padding:14px;border-bottom:1px solid #ddd}
+h1{margin:0 0 10px;font-size:22px}
+button{border:0;border-radius:10px;padding:10px 14px;font-size:15px;cursor:pointer}
+.top{display:flex;gap:8px;flex-wrap:wrap}
+.products{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:12px}
+.card{background:#fff;border-radius:14px;padding:10px;box-shadow:0 1px 5px #ddd}
+.pic{height:150px;border-radius:10px;background:#f1f1f1;display:flex;align-items:center;justify-content:center;font-size:55px;overflow:hidden;margin-bottom:8px}
 .pic img{width:100%;height:100%;object-fit:cover}
-.name{font-weight:700;margin-top:9px;line-height:1.2}.price{font-weight:800;margin-top:6px}
-.old{color:#999;text-decoration:line-through;font-size:13px;margin-top:4px}
-button{border:0;border-radius:11px;padding:10px 12px;cursor:pointer}
-.add{width:100%;margin-top:9px;background:#111;color:#fff;font-weight:700}
-.cart{position:fixed;right:16px;bottom:18px;background:#111;color:#fff;border-radius:25px;padding:14px 18px;font-weight:700;box-shadow:0 5px 20px #0003}
-.modal{display:none;position:fixed;inset:0;background:#0008;z-index:20;align-items:flex-end;justify-content:center}
-.sheet{background:#fff;width:100%;max-width:650px;border-radius:22px 22px 0 0;padding:18px;max-height:90vh;overflow:auto}
-input,textarea,select{width:100%;padding:12px;border:1px solid #ddd;border-radius:11px;margin:6px 0 10px;font-size:15px}
-.row{display:flex;gap:8px}.row>*{flex:1}.secondary{background:#eee}.primary{background:#111;color:#fff}
-.cartrow{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid #eee}
-.qty button{padding:5px 9px;background:#eee}.total{font-size:20px;font-weight:800;margin:15px 0}
-@media(max-width:520px){.categories{grid-template-columns:repeat(3,1fr)}.products{grid-template-columns:repeat(2,1fr)}}
+.name{font-weight:700;min-height:40px}
+.price{font-weight:700;margin:7px 0}
+.old{text-decoration:line-through;color:#999;font-size:13px}
+.tag{font-size:12px;margin-bottom:5px}
+.qty{display:flex;align-items:center;gap:8px;margin-top:8px}
+.qty button{padding:7px 11px}
+.cart{position:fixed;right:14px;bottom:14px;border-radius:30px;padding:14px 18px;background:#111;color:#fff}
+.empty{text-align:center;padding:30px;color:#777}
+@media(max-width:480px){.products{grid-template-columns:repeat(2,minmax(0,1fr))}.pic{height:125px}}
 </style>
 </head>
 <body>
 <header>
-  <div class="logo">777MAZ Market</div>
-  <div class="sub">Sifatli mahsulotlar — qulay xarid</div>
-  <input id="search" class="search" placeholder="🔎 Mahsulot izlash..." oninput="render()">
+<h1>🛍 777MAZ Market</h1>
+<div class="top">
+<button onclick="setCategory('')">Barchasi</button>
+<button onclick="setCategory('🥤 Ichimliklar')">🥤 Ichimliklar</button>
+<button onclick="setCategory('🍫 Shirinliklar')">🍫 Shirinliklar</button>
+<button onclick="setCategory('🍎 Mevalar')">🍎 Mevalar</button>
+<button onclick="setCategory('🥕 Sabzavotlar')">🥕 Sabzavotlar</button>
+<button onclick="setCategory('👶 Bolalar ovqati')">👶 Bolalar</button>
+<button onclick="setCategory('🍳 Oshxona mahsulotlari')">🍳 Oshxona</button>
+<button onclick="setCategory('🧴 Gellar va shampunlar')">🧴 Gellar</button>
+</div>
 </header>
 
-<main class="container">
-  <h2>Kategoriyalar</h2>
-  <div class="categories">
-    <div class="cat" onclick="setCat('')"><b>🛍️</b>Barchasi</div>
-    <div class="cat" onclick="setCat('🥤 Ichimliklar')"><b>🥤</b>Ichimliklar</div>
-    <div class="cat" onclick="setCat('🍫 Shirinliklar')"><b>🍫</b>Shirinliklar</div>
-    <div class="cat" onclick="setCat('🍎 Mevalar')"><b>🍎</b>Mevalar</div>
-    <div class="cat" onclick="setCat('🥕 Sabzavotlar')"><b>🥕</b>Sabzavotlar</div>
-    <div class="cat" onclick="setCat('👶 Bolalar ovqati')"><b>👶</b>Bolalar ovqati</div>
-    <div class="cat" onclick="setCat('🍳 Oshxona mahsulotlari')"><b>🍳</b>Oshxona</div>
-    <div class="cat" onclick="setCat('🧴 Gellar va shampunlar')"><b>🧴</b>Gellar</div>
-  </div>
-  <h2 style="margin-top:22px">Mahsulotlar</h2>
-  <div id="products" class="products">Yuklanmoqda...</div>
-</main>
-
-<button class="cart" onclick="openCart()">🛒 Savat <span id="count">0</span></button>
-
-<div id="modal" class="modal">
-  <div class="sheet">
-    <h2 id="modalTitle">🛒 Savat</h2>
-    <div id="cartItems"></div>
-    <div id="checkout" style="display:none">
-      <div class="total">Jami: <span id="total">0</span> so‘m</div>
-      <input id="name" placeholder="Ismingiz">
-      <input id="phone" placeholder="Telefon raqamingiz">
-      <textarea id="address" placeholder="Manzilingiz"></textarea>
-      <select id="payment">
-        <option value="Naqd pul">💵 Naqd pul</option>
-        <option value="Karta orqali">💳 Karta orqali</option>
-        <option value="Joyida to‘lov">🏪 Joyida to‘lov</option>
-      </select>
-      <button class="primary" style="width:100%;margin-top:5px" onclick="sendOrder()">✅ Buyurtma berish</button>
-    </div>
-    <div class="row" style="margin-top:12px">
-      <button class="secondary" style="flex:1" onclick="closeModal()">Yopish</button>
-      <button class="primary" id="checkoutBtn" style="flex:1" onclick="showCheckout()">Davom etish</button>
-    </div>
-  </div>
-</div>
+<div id="products" class="products"></div>
+<button class="cart" onclick="showCart()">🛒 Savat (<span id="cartCount">0</span>)</button>
 
 <script>
 let products=[], category='', cart={};
-const emojiMap={
-  '🥤 Ichimliklar':'🥤','🍫 Shirinliklar':'🍫','🍎 Mevalar':'🍎',
-  '🥕 Sabzavotlar':'🥕','👶 Bolalar ovqati':'👶',
-  '🍳 Oshxona mahsulotlari':'🍳','🧴 Gellar va shampunlar':'🧴'
+
+const icons={
+  '🥤 Ichimliklar':'🥤',
+  '🍫 Shirinliklar':'🍫',
+  '🍎 Mevalar':'🍎',
+  '🥕 Sabzavotlar':'🥕',
+  '👶 Bolalar ovqati':'👶',
+  '🍳 Oshxona mahsulotlari':'🍳',
+  '🧴 Gellar va shampunlar':'🧴'
 };
 
-function money(n){return Number(n||0).toLocaleString('uz-UZ')+' so‘m'}
-function setCat(c){category=c;render()}
-function getEmoji(p){return emojiMap[p.category] || '🛍️'}
-
-async function loadProducts(){
+async function load(){
   try{
-    const r=await fetch('/api/products',{cache:'no-store'});
+    const r=await fetch('/api/products');
     const d=await r.json();
     products=d.products||[];
     render();
   }catch(e){
-    document.getElementById('products').innerHTML='<div>Mahsulotlarni yuklashda xatolik.</div>';
+    document.getElementById('products').innerHTML='<div class="empty">Mahsulotlarni yuklashda xatolik.</div>';
   }
+}
+
+function setCategory(c){
+  category=c;
+  render();
+}
+
+function money(n){
+  return Number(n||0).toLocaleString('uz-UZ')+' so‘m';
 }
 
 function render(){
-  const q=document.getElementById('search').value.toLowerCase();
-  const list=products.filter(p=>
-    (!category||p.category===category) &&
-    String(p.name).toLowerCase().includes(q)
-  );
-  document.getElementById('products').innerHTML=list.map(p=>{
-    const image=p.image_file_id;
+  const list=products.filter(p=>!category || p.category===category);
+  const el=document.getElementById('products');
+
+  if(!list.length){
+    el.innerHTML='<div class="empty">Mahsulot topilmadi.</div>';
+    return;
+  }
+
+  el.innerHTML=list.map(p=>{
+    const image=p.image_file_id
+      ? `<img src="/api/product-image?file_id=${encodeURIComponent(p.image_file_id)}" alt="${esc(p.name)}" loading="lazy">`
+      : (icons[p.category]||'🛍️');
+
+    const tag=p.is_discount
+      ? '<div class="tag">🏷️ Chegirma</div>'
+      : (p.is_new ? '<div class="tag">🆕 Yangi</div>' : '');
+
     return `<div class="card">
-      <div class="pic">${image ? '<span>'+getEmoji(p)+'</span>' : getEmoji(p)}</div>
-      <div class="name">${escapeHtml(p.name)}</div>
-      ${p.old_price ? '<div class="old">'+money(p.old_price)+'</div>' : ''}
+      <div class="pic">${image}</div>
+      ${tag}
+      <div class="name">${esc(p.name)}</div>
+      ${p.old_price ? `<div class="old">${money(p.old_price)}</div>` : ''}
       <div class="price">${money(p.price)}</div>
-      <button class="add" onclick="add(${p.id})">🛒 Savatga</button>
+      <div class="qty">
+        <button onclick="add(${p.id})">🛒 Qo‘shish</button>
+        <span>${cart[p.id]||0}</span>
+      </div>
     </div>`;
-  }).join('') || '<div>Mahsulot topilmadi.</div>';
+  }).join('');
+
+  updateCartCount();
 }
 
-function escapeHtml(s){
-  return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+function esc(s){
+  return String(s??'').replace(/[&<>"']/g,m=>({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'
+  }[m]));
 }
-function add(id){cart[id]=(cart[id]||0)+1;updateCount()}
-function updateCount(){
-  document.getElementById('count').textContent=Object.values(cart).reduce((a,b)=>a+b,0)
+
+function add(id){
+  cart[id]=(cart[id]||0)+1;
+  render();
 }
-function openCart(){
-  document.getElementById('modalTitle').textContent='🛒 Savat';
-  document.getElementById('checkout').style.display='none';
-  document.getElementById('checkoutBtn').style.display='block';
-  renderCart(); document.getElementById('modal').style.display='flex';
+
+function updateCartCount(){
+  document.getElementById('cartCount').textContent=
+    Object.values(cart).reduce((a,b)=>a+b,0);
 }
-function closeModal(){document.getElementById('modal').style.display='none'}
-function renderCart(){
-  let total=0, html='';
-  for(const [id,qty] of Object.entries(cart)){
-    const p=products.find(x=>x.id==id); if(!p) continue;
-    total+=p.price*qty;
-    html+=`<div class="cartrow"><div><b>${escapeHtml(p.name)}</b><br>${money(p.price*qty)}</div>
-      <div class="qty"><button onclick="changeQty(${p.id},-1)">−</button>
-      <b style="padding:0 8px">${qty}</b>
-      <button onclick="changeQty(${p.id},1)">+</button></div></div>`;
-  }
-  document.getElementById('cartItems').innerHTML=html||'<div>Savat hozircha bo‘sh.</div>';
-  document.getElementById('total').textContent=total.toLocaleString('uz-UZ');
+
+function showCart(){
+  const items=products.filter(p=>cart[p.id]);
+  if(!items.length){alert('Savat bo‘sh.');return;}
+  let text='SAVAT\n\n', total=0;
+  items.forEach(p=>{
+    const q=cart[p.id];
+    total+=Number(p.price)*q;
+    text+=`${p.name} — ${q} dona — ${money(Number(p.price)*q)}\n`;
+  });
+  text+=`\nJami: ${money(total)}`;
+  alert(text);
 }
-function changeQty(id,d){
-  cart[id]=(cart[id]||0)+d;
-  if(cart[id]<=0) delete cart[id];
-  updateCount(); renderCart();
-}
-function showCheckout(){
-  if(!Object.keys(cart).length){alert('Savat hozircha bo‘sh.');return}
-  document.getElementById('checkout').style.display='block';
-  document.getElementById('checkoutBtn').style.display='none';
-  document.getElementById('modalTitle').textContent='📝 Buyurtma';
-}
-async function sendOrder(){
-  const items=Object.entries(cart).map(([id,quantity])=>({id:Number(id),quantity}));
-  const payload={
-    name:document.getElementById('name').value.trim(),
-    phone:document.getElementById('phone').value.trim(),
-    address:document.getElementById('address').value.trim(),
-    payment_method:document.getElementById('payment').value,
-    items
-  };
-  if(!payload.name||!payload.phone){alert('Ism va telefonni kiriting.');return}
-  try{
-    const r=await fetch('/api/order',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-    const d=await r.json();
-    if(!d.ok){alert(d.error||'Buyurtma yuborilmadi.');return}
-    alert('✅ Buyurtma qabul qilindi! №'+d.order_id+'\nJami: '+money(d.total));
-    cart={}; updateCount(); closeModal();
-  }catch(e){alert('Server bilan aloqa bo‘lmadi.')}
-}
-loadProducts();
+
+load();
 </script>
 </body>
 </html>
