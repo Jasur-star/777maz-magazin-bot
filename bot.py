@@ -1,6 +1,7 @@
 import os
 import sqlite3
 from datetime import datetime
+from urllib.parse import quote
 from aiohttp import web
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart, Command
@@ -117,19 +118,16 @@ def seed_products():
 def is_admin(uid): return ADMIN_ID and str(uid) == str(ADMIN_ID)
 
 
+WEB_MARKET_URL = os.getenv("WEB_MARKET_URL", "https://seven77maz-magazin-bot-1.onrender.com")
+
 def main_menu():
+    address = setting("shop_address", DEFAULT_ADDRESS)
+    map_url = "https://www.google.com/maps/search/?api=1&query=" + quote(address)
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🛍 Mahsulotlar", callback_data="products")],
-        [InlineKeyboardButton(text="🏷️ Chegirmalar", callback_data="discounts"),
-         InlineKeyboardButton(text="🆕 Yangilar", callback_data="new_products")],
-        [InlineKeyboardButton(text="🛒 Savat", callback_data="cart"),
-         InlineKeyboardButton(text="📝 Buyurtma", callback_data="order")],
-        [InlineKeyboardButton(text="📦 Buyurtmalarim", callback_data="orders"),
-         InlineKeyboardButton(text="💳 To‘lov", callback_data="payment_info")],
-        [InlineKeyboardButton(text="👤 Profilim", callback_data="profile"),
-         InlineKeyboardButton(text="⭐ Sevimlilar", callback_data="favorites")],
-        [InlineKeyboardButton(text="🔎 Qidirish", callback_data="search")],
-        [InlineKeyboardButton(text="📞 Aloqa", callback_data="contact")]
+        [InlineKeyboardButton(text="🛍 Mahsulotlar", url=WEB_MARKET_URL),
+         InlineKeyboardButton(text="🛒 Savat", callback_data="cart")],
+        [InlineKeyboardButton(text="☎️ Biz bilan aloqa", callback_data="contact"),
+         InlineKeyboardButton(text="📍 Do‘kon lokatsiyasi", url=map_url)]
     ])
 
 
@@ -225,8 +223,11 @@ def profile_save(uid, name=None, phone=None, address=None, lat=None, lon=None):
 
 @dp.message(CommandStart())
 async def start(m: Message):
-    await m.answer("🛍 Assalomu alaykum!\n\n777MAZ Magazin botiga xush kelibsiz!",
-                   reply_markup=main_menu())
+    await m.answer(
+        "👋 777MAZ Marketga xush kelibsiz!\n\n"
+        "🛍 Mahsulotlarni ko‘rish va buyurtma berish uchun quyidagi tugmalardan foydalaning.",
+        reply_markup=main_menu()
+    )
 
 
 @dp.message(Command("admin"))
