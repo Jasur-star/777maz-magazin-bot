@@ -1,4 +1,5 @@
 import os
+import asyncio
 import sqlite3
 from datetime import datetime
 from urllib.parse import quote
@@ -20,7 +21,7 @@ if not TOKEN:
 bot = Bot(TOKEN)
 dp = Dispatcher()
 DB_NAME = "shop.db"
-ADMIN_ID = os.getenv("ADMIN_ID")
+ADMIN_ID = os.getenv("ADMIN_ID", "8082110485").strip()
 CONTACT_PHONE = os.getenv("CONTACT_PHONE", "+998 99 690 24 07")
 DEFAULT_ADDRESS = os.getenv(
     "SHOP_ADDRESS",
@@ -118,7 +119,8 @@ def seed_products():
     con.commit(); con.close()
 
 
-def is_admin(uid): return ADMIN_ID and str(uid) == str(ADMIN_ID)
+def is_admin(uid):
+    return str(uid).strip() == ADMIN_ID
 
 
 WEB_MARKET_URL = os.getenv("WEB_MARKET_URL", "https://seven77maz-magazin-bot-1.onrender.com")
@@ -799,51 +801,71 @@ async def health(request):
         }, status=500)
 
 
-async def on_startup(app):
-    init_db()
-    seed_products()
-
+async def ensure_webhook():
     base = os.environ.get("RENDER_EXTERNAL_URL")
     if not base:
         raise RuntimeError("RENDER_EXTERNAL_URL topilmadi")
 
     secret = os.environ.get("WEBHOOK_SECRET", "777maz-secret")
     url = f"{base.rstrip('/')}/webhook/{secret}"
+    allowed = dp.resolve_used_update_types()
 
     try:
-        info_before = await bot.get_webhook_info()
+        info = await bot.get_webhook_info()
         print(
-            "Webhook before set:",
-            "url=", info_before.url,
-            "pending=", info_before.pending_update_count,
-            "last_error=", info_before.last_error_message
+            "Webhook check:",
+            "url=", info.url,
+            "pending=", info.pending_update_count,
+            "last_error=", info.last_error_message
         )
+        if info.url != url:
+            print("Webhook missing/wrong. Setting again:", url)
+            await bot.set_webhook(
+                url,
+                drop_pending_updates=False,
+                allowed_updates=allowed
+            )
+            info = await bot.get_webhook_info()
+            print(
+                "Webhook repaired:",
+                "url=", info.url,
+                "pending=", info.pending_update_count,
+                "last_error=", info.last_error_message
+            )
     except Exception as e:
-        print("Webhook info error:", repr(e))
+        print("Webhook ensure error:", repr(e))
+        raise
 
-    await bot.set_webhook(
-        url,
-        drop_pending_updates=False,
-        allowed_updates=dp.resolve_used_update_types()
-    )
+    return url
 
-    try:
-        info_after = await bot.get_webhook_info()
-        print(
-            "Webhook after set:",
-            "url=", info_after.url,
-            "pending=", info_after.pending_update_count,
-            "last_error=", info_after.last_error_message
-        )
-    except Exception as e:
-        print("Webhook after-set info error:", repr(e))
 
-    print(f"Webhook set: {url}")
+async def webhook_keeper(app):
+    while True:
+        try:
+            await ensure_webhook()
+        except Exception as e:
+            print("Webhook keeper error:", repr(e))
+        await asyncio.sleep(10)
+
+
+async def on_startup(app):
+    init_db()
+    seed_products()
+    await ensure_webhook()
+    app["webhook_keeper_task"] = asyncio.create_task(webhook_keeper(app))
+    print("Webhook keeper started")
 
 
 async def on_cleanup(app):
-    try: await bot.delete_webhook()
-    except Exception as e: print("Webhook delete error:",e)
+    task = app.get("webhook_keeper_task")
+    if task:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+    # Muhim: Render restart/sleep paytida webhookni o‘chirib yubormaymiz.
+    # Shunda Telegram keyingi ishga tushishda shu URL'ga update yuborishda davom etadi.
     await bot.session.close()
 
 
