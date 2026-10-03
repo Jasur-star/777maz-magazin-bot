@@ -22,8 +22,11 @@ dp = Dispatcher()
 DB_NAME = "shop.db"
 ADMIN_ID = os.getenv("ADMIN_ID")
 CONTACT_PHONE = os.getenv("CONTACT_PHONE", "+998 99 690 24 07")
-DEFAULT_ADDRESS = os.getenv("SHOP_ADDRESS", "Mirzo Ulug‘bek tumani")
-DEFAULT_TELEGRAM = os.getenv("SHOP_TELEGRAM", "")
+DEFAULT_ADDRESS = os.getenv(
+    "SHOP_ADDRESS",
+    "Toshkent shahar, Mirzo Ulug‘bek tumani, Mirzo Ulug‘bek ko‘chasi, 107-uy, 1-xonadon"
+)
+DEFAULT_TELEGRAM = os.getenv("SHOP_TELEGRAM", "@online08981")
 
 CATEGORIES = [
     "🥤 Ichimliklar", "🍫 Shirinliklar", "🍎 Mevalar", "🥕 Sabzavotlar",
@@ -557,10 +560,43 @@ async def payment_info(c):
 
 @dp.callback_query(F.data == "contact")
 async def contact(c):
-    phone=setting("contact_phone",CONTACT_PHONE); addr=setting("shop_address",DEFAULT_ADDRESS); tg=setting("telegram",DEFAULT_TELEGRAM)
-    text=f"📞 ALOQA\n\n📞 Telefon: {phone}\n📍 Manzil: {addr}"
-    if tg: text+=f"\n📱 Telegram: {tg}"
-    await c.message.edit_text(text,reply_markup=back_home()); await c.answer()
+    phone = setting("contact_phone", CONTACT_PHONE)
+    addr = setting(
+        "shop_address",
+        "Toshkent shahar, Mirzo Ulug‘bek tumani, Mirzo Ulug‘bek ko‘chasi, 107-uy, 1-xonadon"
+    )
+    tg = setting("telegram", "@online08981")
+
+    map_url = "https://www.google.com/maps/search/?api=1&query=" + quote(addr)
+
+    text = (
+        "☎️ BIZ BILAN ALOQA\n\n"
+        f"📞 Telefon: {phone}\n"
+        f"💬 Telegram: {tg}\n"
+        f"📍 Manzil: {addr}"
+    )
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="📞 Qo‘ng‘iroq qilish",
+            url=f"tel:{phone.replace(' ', '')}"
+        )],
+        [InlineKeyboardButton(
+            text="💬 Telegram",
+            url="https://t.me/online08981"
+        )],
+        [InlineKeyboardButton(
+            text="📍 Xaritada ko‘rish",
+            url=map_url
+        )],
+        [InlineKeyboardButton(
+            text="🏠 Bosh menyu",
+            callback_data="home"
+        )]
+    ])
+
+    await c.message.edit_text(text, reply_markup=kb)
+    await c.answer()
 
 
 @dp.callback_query(F.data == "profile")
