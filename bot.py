@@ -54,9 +54,7 @@ async def supabase_request(method, path, payload=None):
                 return []
 
             return await response.json()
-ADMIN_ID = os.getenv("ADMIN_ID", "").strip()
-# Asosiy admin ID: Render ENV bo'sh yoki noto'g'ri bo'lsa ham bot egasi taniladi.
-PRIMARY_ADMIN_ID = "8082110485"
+ADMIN_ID = os.getenv("ADMIN_ID", "8082110485").strip()
 CONTACT_PHONE = os.getenv("CONTACT_PHONE", "+998 99 690 24 07")
 DEFAULT_ADDRESS = os.getenv(
     "SHOP_ADDRESS",
@@ -155,18 +153,90 @@ def seed_products():
 
 
 def is_admin(uid):
-    uid = str(uid).strip()
-    allowed = {PRIMARY_ADMIN_ID}
-    if ADMIN_ID:
-        allowed.add(ADMIN_ID)
-    return uid in allowed
+    return str(uid).strip() == ADMIN_ID
 
 
-def clear_user_states(uid):
-    """Eski buyurtma/admin/qidiruv jarayonlarini tozalaydi."""
-    order_states.pop(uid, None)
-    admin_states.pop(uid, None)
-    search_states.discard(uid)
+WEB_MARKET_URL = os.getenv("WEB_MARKET_URL", "https://seven77maz-magazin-bot-1.onrender.com")
+
+def main_menu():
+    address = setting("shop_address", DEFAULT_ADDRESS)
+    map_url = "https://www.google.com/maps/search/?api=1&query=" + quote(address)
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🛍 Mahsulotlar", url=WEB_MARKET_URL),
+         InlineKeyboardButton(text="🛒 Savat", callback_data="cart")],
+        [InlineKeyboardButton(text="☎️ Biz bilan aloqa", callback_data="contact"),
+         InlineKeyboardButton(text="📍 Do‘kon lokatsiyasi", url=map_url)],
+        [InlineKeyboardButton(text="⚙️ Admin panel", callback_data="admin")]
+    ])
+
+
+def back_home():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🏠 Bosh menyu", callback_data="home")]])
+
+
+def catalog_keyboard():
+    rows = [[InlineKeyboardButton(text=c, callback_data=f"category:{i}")]
+            for i, c in enumerate(CATEGORIES)]
+    rows += [[InlineKeyboardButton(text="🛒 Savat", callback_data="cart")],
+             [InlineKeyboardButton(text="🏠 Bosh menyu", callback_data="home")]]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def product_rows(rows, back="products"):
+    kb = []
+    for pid, name, price, old, disc, new in rows:
+        tag = "🏷️ " if disc else ("🆕 " if new else "")
+        kb.append([InlineKeyboardButton(
+            text=f"{tag}{name} — {price:,} so'm", callback_data=f"product:{pid}")])
+    kb += [[InlineKeyboardButton(text="⬅️ Orqaga", callback_data=back)],
+           [InlineKeyboardButton(text="🛒 Savat", callback_data="cart")]]
+    return InlineKeyboardMarkup(inline_keyboard=kb)
+
+
+def phone_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="📞 Telefon raqamimni yuborish", request_contact=True)]],
+        resize_keyboard=True, one_time_keyboard=True)
+
+
+def location_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="📍 Lokatsiyamni yuborish", request_location=True)],
+                  [KeyboardButton(text="❌ Bekor qilish")]],
+        resize_keyboard=True, one_time_keyboard=True)
+
+
+def payment_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💳 Karta orqali", callback_data="pay:card")],
+        [InlineKeyboardButton(text="💵 Naqd pul", callback_data="pay:cash")],
+        [InlineKeyboardButton(text="🏪 Joyida to‘lov", callback_data="pay:onsite")],
+        [InlineKeyboardButton(text="❌ Bekor qilish", callback_data="cancel_order")]])
+
+
+def confirm_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Tasdiqlash", callback_data="confirm_order")],
+        [InlineKeyboardButton(text="❌ Bekor qilish", callback_data="cancel_order")]])
+
+
+def admin_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➕ Mahsulot qo‘shish", callback_data="admin_add")],
+        [InlineKeyboardButton(text="🏷️ Chegirmaga qo‘shish", callback_data="admin_add_discount")],
+        [InlineKeyboardButton(text="🆕 Yangi mahsulot qo‘shish", callback_data="admin_add_new")],
+        [InlineKeyboardButton(text="📋 Mahsulotlar", callback_data="admin_list")],
+        [InlineKeyboardButton(text="🗑 Mahsulot o‘chirish", callback_data="admin_delete")],
+        [InlineKeyboardButton(text="📞 Aloqa/Sozlamalar", callback_data="admin_settings")],
+        [InlineKeyboardButton(text="🏠 Bosh menyu", callback_data="home")]])
+
+
+def admin_cat_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=c, callback_data=f"admin_cat:{i}")]
+        for i, c in enumerate(CATEGORIES)
+    ] + [[InlineKeyboardButton(text="❌ Bekor qilish", callback_data="admin_cancel")]])
 
 
 def profile_get(uid):
@@ -203,33 +273,25 @@ async def start(m: Message):
 async def admin_cmd(m: Message):
     if not is_admin(m.from_user.id):
         await m.answer("⛔ Sizda admin huquqi yo‘q."); return
-    clear_user_states(m.from_user.id)
+    admin_states.pop(m.from_user.id, None)
     await m.answer("⚙️ ADMIN PANEL", reply_markup=admin_keyboard())
 
 
-@dp.callback_query(F.data == "admin")
+@dp.callback_query(F.data.in_({"admin", "admin_panel"}))
 async def admin_cb(c: CallbackQuery):
     if not is_admin(c.from_user.id):
         await c.answer("⛔ Admin huquqi yo‘q.", show_alert=True)
         return
-
-    clear_user_states(c.from_user.id)
-
-    await c.message.edit_text(
-        "⚙️ ADMIN PANEL",
-        reply_markup=admin_keyboard()
-    )
+    admin_states.pop(c.from_user.id, None)
+    await c.message.edit_text("⚙️ ADMIN PANEL\n\nKerakli amalni tanlang:", reply_markup=admin_keyboard())
     await c.answer("Admin panel")
 
 
 async def begin_add(c, mode):
     if not is_admin(c.from_user.id):
-        await c.answer("⛔ Admin huquqi yo‘q.", show_alert=True)
-        return
-
+        await c.answer("⛔ Admin huquqi yo‘q.", show_alert=True); return
     uid = c.from_user.id
-    clear_user_states(uid)
-
+    admin_states.pop(uid, None)
     admin_states[uid] = {
         "step":"name","mode":mode,"name":"","price":0,"old_price":0,
         "category":"","is_discount":int(mode=="discount"),"is_new":int(mode=="new")}
@@ -260,17 +322,10 @@ async def admin_cat(c):
 
 @dp.callback_query(F.data == "admin_cancel")
 async def admin_cancel(c):
-    if not is_admin(c.from_user.id):
-        await c.answer("⛔ Admin huquqi yo‘q.", show_alert=True)
-        return
-
-    clear_user_states(c.from_user.id)
-
-    await c.message.edit_text(
-        "❌ Amal bekor qilindi.\n\n⚙️ ADMIN PANEL",
-        reply_markup=admin_keyboard()
-    )
-    await c.answer("Bekor qilindi")
+    if not is_admin(c.from_user.id): return
+    admin_states.pop(c.from_user.id, None)
+    await c.message.answer("❌ Bekor qilindi.", reply_markup=admin_keyboard())
+    await c.answer()
 
 
 @dp.message(F.photo)
@@ -406,14 +461,8 @@ Qaysi ma’lumotni o‘zgartirasiz?"""
 
 @dp.callback_query(F.data.startswith("set:"))
 async def set_start(c):
-    if not is_admin(c.from_user.id):
-        return
-
-    uid = c.from_user.id
-    clear_user_states(uid)
-
-    field = c.data.split(":")[1]
-    admin_states[uid] = {"step": "setting", "field": field}
+    if not is_admin(c.from_user.id): return
+    field=c.data.split(":")[1]; admin_states[c.from_user.id]={"step":"setting","field":field}
     labels={"phone":"📞 Yangi telefonni yozing:","address":"📍 Yangi manzilni yozing:","telegram":"📱 Telegram username/linkni yozing:"}
     await c.message.answer(labels[field]); await c.answer()
 
@@ -711,8 +760,11 @@ async def texts(m: Message):
             key={"phone":"contact_phone","address":"shop_address","telegram":"telegram"}[s["field"]]
             set_setting(key,text); admin_states.pop(uid,None)
             await m.answer("✅ Sozlama saqlandi.",reply_markup=admin_keyboard()); return
-        if s["step"]=="name":
-            s["name"]=text; s["step"]="price"; await m.answer("2️⃣ Narxni yozing:"); return
+        if s.get("step") == "name":
+            s["name"] = text
+            s["step"] = "price"
+            await m.answer("2️⃣ Narxni yozing:")
+            return
         if s["step"] in ("price","old_price"):
             n=text.replace(" ","").replace(",","")
             if not n.isdigit() or int(n)<=0: await m.answer("❗ Faqat musbat raqam yozing."); return
@@ -735,14 +787,7 @@ async def texts(m: Message):
 
 @dp.callback_query(F.data == "home")
 async def home(c):
-    uid = c.from_user.id
-    clear_user_states(uid)
-
-    await c.message.edit_text(
-        "🏠 Bosh menyu",
-        reply_markup=main_menu()
-    )
-    await c.answer("Bosh menyu")
+    await c.message.edit_text("🏠 Bosh menyu",reply_markup=main_menu()); await c.answer()
 
 
 # ---------------- WEB MARKET API ----------------
@@ -776,27 +821,6 @@ async def api_products(request):
     """).fetchall()
     con.close()
     return web.json_response({"products": [product_dict(r) for r in rows]})
-
-async def api_product_image(request):
-    file_id = request.query.get("file_id", "").strip()
-    if not file_id:
-        return web.Response(status=400, text="file_id kerak")
-    try:
-        tg_file = await bot.get_file(file_id)
-        if not tg_file.file_path:
-            return web.Response(status=404, text="Rasm topilmadi")
-        url = f"https://api.telegram.org/file/bot{TOKEN}/{tg_file.file_path}"
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as response:
-                if response.status != 200:
-                    return web.Response(status=404, text="Rasmni yuklab bo‘lmadi")
-                data = await response.read()
-                content_type = response.headers.get("Content-Type", "image/jpeg")
-                return web.Response(body=data, content_type=content_type)
-    except Exception as e:
-        print("Product image error:", repr(e))
-        return web.Response(status=404, text="Rasm topilmadi")
-
 
 async def api_settings(request):
     return web.json_response({"phone":setting("contact_phone",CONTACT_PHONE),
@@ -983,7 +1007,6 @@ async def sync_products():
         print("Supabase sync error:", repr(e))
 async def on_startup(app):
     init_db()
-    print("ADMIN_ID:", repr(ADMIN_ID))
     seed_products()
     await sync_products()
     await ensure_webhook()
@@ -1010,7 +1033,6 @@ def create_app():
     app.router.add_get("/",web_index)
     app.router.add_get("/health",health)
     app.router.add_get("/api/products",api_products)
-    app.router.add_get("/api/product-image", api_product_image)
     app.router.add_get("/api/settings",api_settings)
     app.router.add_post("/api/order",api_order)
     app.router.add_post(f"/webhook/{secret}",webhook)
