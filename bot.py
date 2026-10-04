@@ -2046,100 +2046,87 @@ async def api_order(request):
         address = str(data.get("address", "")).strip()
         lat = data.get("latitude")
         lon = data.get("longitude")
-        payment = str(
-            data.get("payment_method", "Naqd")
-        )
+        payment = str(data.get("payment_method", "Naqd"))
         items = data.get("items", [])
 
         if not name or not phone or not items:
             return web.json_response(
-                {
-                    "ok": False,
-                    "error": "Ism, telefon va savat kerak."
-                },
+                {"ok": False, "error": "Ism, telefon va savat kerak."},
                 status=400
             )
 
-        # Web Market Supabase'dan mahsulot oladi.
-        # Buyurtma vaqtida local DB ham sinxronlangan bo‘lishi kerak.
         con = db()
-
         valid = []
         total = 0
 
         for item in items:
             try:
                 pid = int(item["id"])
-                qty = max(
-                    1,
-                    min(
-                        99,
-                        int(item.get("quantity", 1))
-                    )
-                )
             except (ValueError, TypeError, KeyError):
                 continue
 
             r = con.execute(
-                "SELECT name,price FROM products WHERE id=?",
+                "SELECT name,price,category FROM products WHERE id=?",
                 (pid,)
             ).fetchone()
+            if not r:
+                continue
 
-            if r:
-                valid.append(
-                    (r[0], r[1], qty)
-                )
-                total += r[1] * qty
+            pname, price, category = r
+
+            if is_weight_product(category):
+                try:
+                    grams = int(item.get("grams", 100))
+                except (ValueError, TypeError):
+                    grams = 100
+                grams = max(100, min(100000, grams))
+                grams = (grams // 100) * 100
+                line_total = weight_price(price, grams)
+                valid.append((pname, price, grams, True, line_total))
+                total += line_total
+            else:
+                try:
+                    qty = max(1, min(99, int(item.get("quantity", 1))))
+                except (ValueError, TypeError):
+                    qty = 1
+                line_total = price * qty
+                valid.append((pname, price, qty, False, line_total))
+                total += line_total
 
         if not valid:
             con.close()
-
             return web.json_response(
-                {
-                    "ok": False,
-                    "error": "Mahsulot topilmadi."
-                },
+                {"ok": False, "error": "Mahsulot topilmadi."},
                 status=400
             )
 
-        items_text = "".join(
-            f"• {n} — {q} dona — {p*q:,} so‘m\n"
-            for n, p, q in valid
-        )
+        lines = []
+        for pname, price, amount, weighted, line_total in valid:
+            if weighted:
+                lines.append(
+                    f"• {pname} — {amount} g — {price:,} so‘m/kg — {line_total:,} so‘m\n"
+                )
+            else:
+                lines.append(
+                    f"• {pname} — {amount} dona — {line_total:,} so‘m\n"
+                )
+        items_text = "".join(lines)
 
-        created = datetime.now().strftime(
-            "%Y-%m-%d %H:%M:%S"
-        )
-
+        created = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         cur = con.cursor()
-
         cur.execute(
             """INSERT INTO orders(
                user_id,name,phone,address,items,total,status,
                created_at,payment_method,latitude,longitude)
                VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
-            (
-                0,
-                name,
-                phone,
-                address,
-                items_text,
-                total,
-                "Yangi",
-                created,
-                payment,
-                lat,
-                lon
-            )
+            (0, name, phone, address, items_text, total, "Yangi",
+             created, payment, lat, lon)
         )
-
         oid = cur.lastrowid
-
         con.commit()
         con.close()
 
         admin_id = admin_chat_id()
-
         if admin_id:
             msg = f"""🌐 WEB MARKETDAN YANGI BUYURTMA №{oid}
 
@@ -2150,50 +2137,21 @@ async def api_order(request):
 
 🛍 {items_text}💰 Jami: {total:,} so‘m
 🕐 {created}"""
-
             try:
-                await bot.send_message(
-                    admin_id,
-                    msg
-                )
-
+                await bot.send_message(admin_id, msg)
                 if lat is not None and lon is not None:
-                    await bot.send_location(
-                        admin_id,
-                        float(lat),
-                        float(lon)
-                    )
-
+                    await bot.send_location(admin_id, float(lat), float(lon))
             except Exception as e:
-                print(
-                    "Web order admin xabari:",
-                    repr(e)
-                )
+                print("Web order admin xabari:", repr(e))
 
-        return web.json_response({
-            "ok": True,
-            "order_id": oid,
-            "total": total
-        })
+        return web.json_response({"ok": True, "order_id": oid, "total": total})
 
     except Exception as e:
-        print(
-            "Web order error:",
-            repr(e)
-        )
-
+        print("Web order error:", repr(e))
         return web.json_response(
-            {
-                "ok": False,
-                "error": "Server xatosi."
-            },
-            status=500
+            {"ok": False, "error": "Server xatosi."}, status=500
         )
 
-
-# =========================
-# WEBHOOK
-# =========================
 
 async def webhook(request):
     try:
