@@ -63,6 +63,7 @@ DEFAULT_ADDRESS = os.getenv(
     "Toshkent shahar, Mirzo Ulug‘bek tumani, Mirzo Ulug‘bek ko‘chasi, 107-uy, 1-xonadon"
 )
 DEFAULT_TELEGRAM = os.getenv("SHOP_TELEGRAM", "@online08981")
+WEB_MARKET_URL = os.getenv("WEB_MARKET_URL", "https://seven77maz-magazin-bot-1.onrender.com")
 
 CATEGORIES = [
     "🥤 Ichimliklar", "🍫 Shirinliklar", "🍎 Mevalar", "🥕 Sabzavotlar",
@@ -195,6 +196,7 @@ def profile_save(uid, name=None, phone=None, address=None, lat=None, lon=None):
 def main_menu(uid=None):
     rows = [
         [KeyboardButton(text="🛍 Mahsulotlar"), KeyboardButton(text="🛒 Savat")],
+        [KeyboardButton(text="🌐 Web Market")],
         [KeyboardButton(text="☎️ Biz bilan aloqa"), KeyboardButton(text="📍 Do‘kon lokatsiyasi")],
     ]
     if uid is not None and is_admin(uid):
@@ -856,6 +858,15 @@ async def texts(m: Message):
         addr=setting("shop_address",DEFAULT_ADDRESS)
         map_url="https://www.google.com/maps/search/?api=1&query="+quote(addr)
         await m.answer(f"📍 DO‘KON MANZILI\n\n{addr}",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🗺 Xaritada ochish",url=map_url)],[InlineKeyboardButton(text="🏠 Bosh menyu",callback_data="home")]])); return
+    if text=="🌐 Web Market":
+        await m.answer(
+            "🛍 777MAZ Web Market",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="🌐 Web Marketni ochish", url=WEB_MARKET_URL)
+            ]])
+        )
+        return
+
     if text=="⚙️ Admin panel":
         if not is_admin(uid):
             return
