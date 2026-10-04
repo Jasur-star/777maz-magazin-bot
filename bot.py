@@ -978,7 +978,6 @@ async def sync_products():
 async def on_startup(app):
     init_db()
     print("ADMIN_ID:", repr(ADMIN_ID))
-    print("ADMIN_ID:", repr(ADMIN_ID))
     seed_products()
     await sync_products()
     await ensure_webhook()
@@ -1005,7 +1004,6 @@ def create_app():
     app.router.add_get("/",web_index)
     app.router.add_get("/health",health)
     app.router.add_get("/api/products",api_products)
-    app.router.add_get("/api/product-image", api_product_image)
     app.router.add_get("/api/product-image", api_product_image)
     app.router.add_get("/api/settings",api_settings)
     app.router.add_post("/api/order",api_order)
