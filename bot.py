@@ -8,6 +8,7 @@ import aiohttp
 from aiohttp import web
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart, Command
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import (
     Message, CallbackQuery, Update, InlineKeyboardMarkup, InlineKeyboardButton,
     ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
@@ -309,25 +310,53 @@ def profile_save(uid, name=None, phone=None, address=None, lat=None, lon=None):
 # =========================
 
 def main_menu():
+    # Asosiy menyu: faqat kerakli bo‘limlar ko‘rinadi.
+    # Qolgan funksiyalar kodda saqlanadi, faqat bosh menyudan yashiriladi.
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🌐 Web Market", url=WEB_MARKET_URL)],
-        [
-            InlineKeyboardButton(text="🛍 Mahsulotlar", callback_data="products"),
-            InlineKeyboardButton(text="🛒 Savat", callback_data="cart")
-        ],
-        [
-            InlineKeyboardButton(text="⭐ Sevimlilar", callback_data="favorites"),
-            InlineKeyboardButton(text="📦 Buyurtmalarim", callback_data="orders")
-        ],
-        [
-            InlineKeyboardButton(text="🔎 Qidirish", callback_data="search"),
-            InlineKeyboardButton(text="💳 To‘lov", callback_data="payment_info")
-        ],
-        [
-            InlineKeyboardButton(text="☎️ Biz bilan aloqa", callback_data="contact"),
-            InlineKeyboardButton(text="👤 Profil", callback_data="profile")
-        ]
+        [InlineKeyboardButton(
+            text="🌐 Web Market",
+            url=WEB_MARKET_URL
+        )],
+        [InlineKeyboardButton(
+            text="📦 Buyurtmalarim",
+            callback_data="orders"
+        )],
+        [InlineKeyboardButton(
+            text="☎️ Biz bilan aloqa",
+            callback_data="contact"
+        )],
+        [InlineKeyboardButton(
+            text="👤 Profil",
+            callback_data="profile"
+        )]
     ])
+
+
+async def safe_edit(c, text, reply_markup=None):
+    """Edit callback message safely for both text and photo messages."""
+    msg = c.message
+    if msg is None:
+        return
+
+    try:
+        if getattr(msg, "photo", None):
+            await msg.edit_caption(
+                caption=text,
+                reply_markup=reply_markup
+            )
+        else:
+            await msg.edit_text(
+                text,
+                reply_markup=reply_markup
+            )
+    except TelegramBadRequest as e:
+        # Some Telegram messages cannot be edited anymore.
+        # Send a fresh message instead of returning webhook 500.
+        print("Safe edit fallback:", repr(e))
+        await msg.answer(
+            text,
+            reply_markup=reply_markup
+        )
 
 
 def back_home():
@@ -523,7 +552,7 @@ async def admin_cb(c: CallbackQuery):
 
     clear_user_states(c.from_user.id)
 
-    await c.message.edit_text(
+    await safe_edit(c,
         "⚙️ ADMIN PANEL",
         reply_markup=admin_keyboard()
     )
@@ -603,7 +632,7 @@ async def admin_cancel(c):
 
     clear_user_states(c.from_user.id)
 
-    await c.message.edit_text(
+    await safe_edit(c,
         "❌ Amal bekor qilindi.\n\n⚙️ ADMIN PANEL",
         reply_markup=admin_keyboard()
     )
@@ -710,7 +739,7 @@ async def admin_list(c):
 
         text += "\n\n"
 
-    await c.message.edit_text(
+    await safe_edit(c,
         text[:3900] or "Mahsulot yo‘q.",
         reply_markup=admin_keyboard()
     )
@@ -745,7 +774,7 @@ async def admin_delete(c):
         )
     ])
 
-    await c.message.edit_text(
+    await safe_edit(c,
         "🗑 O‘CHIRILADIGAN MAHSULOT:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=kb)
     )
@@ -819,7 +848,7 @@ Qaysi ma’lumotni o‘zgartirasiz?"""
         [InlineKeyboardButton(text="⬅️ Admin", callback_data="admin")]
     ])
 
-    await c.message.edit_text(text, reply_markup=kb)
+    await safe_edit(c, text, reply_markup=kb)
     await c.answer()
 
 
@@ -896,7 +925,7 @@ async def show_products(c, where="all"):
         "new": "🆕 YANGI MAHSULOTLAR"
     }.get(where, "🛍 MAHSULOTLAR")
 
-    await c.message.edit_text(
+    await safe_edit(c,
         title + "\n\nMahsulotni tanlang:",
         reply_markup=product_rows(rows, "home")
     )
@@ -905,7 +934,7 @@ async def show_products(c, where="all"):
 
 @dp.callback_query(F.data == "products")
 async def products(c):
-    await c.message.edit_text(
+    await safe_edit(c,
         "🛍 KATALOG\n\nKategoriyani tanlang:",
         reply_markup=catalog_keyboard()
     )
@@ -1086,7 +1115,7 @@ async def favorites(c):
 
     con.close()
 
-    await c.message.edit_text(
+    await safe_edit(c,
         "⭐ SEVIMLILAR\n\n" +
         ("Mahsulotni tanlang:" if rows else "Hozircha yo‘q."),
         reply_markup=product_rows(rows, "home") if rows else back_home()
@@ -1109,7 +1138,7 @@ async def cart(c):
     con.close()
 
     if not rows:
-        await c.message.edit_text(
+        await safe_edit(c,
             "🛒 Savat bo‘sh.",
             reply_markup=back_home()
         )
@@ -1125,7 +1154,7 @@ async def cart(c):
 
     text += f"\n💰 Jami: {total:,} so‘m"
 
-    await c.message.edit_text(
+    await safe_edit(c,
         text,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(
@@ -1413,7 +1442,7 @@ async def orders(c):
         for oid, total, status, created, pay in rows
     )
 
-    await c.message.edit_text(
+    await safe_edit(c,
         text if rows else "📦 Hozircha buyurtma yo‘q.",
         reply_markup=back_home()
     )
@@ -1422,7 +1451,7 @@ async def orders(c):
 
 @dp.callback_query(F.data == "payment_info")
 async def payment_info(c):
-    await c.message.edit_text(
+    await safe_edit(c,
         "💳 To‘lov: karta, naqd yoki joyida to‘lov.",
         reply_markup=back_home()
     )
@@ -1472,7 +1501,7 @@ async def contact(c):
         )]
     ])
 
-    await c.message.edit_text(text, reply_markup=kb)
+    await safe_edit(c, text, reply_markup=kb)
     await c.answer()
 
 
@@ -1487,7 +1516,7 @@ async def profile(c):
         f"📍 {a or 'Kiritilmagan'}"
     )
 
-    await c.message.edit_text(
+    await safe_edit(c,
         text,
         reply_markup=back_home()
     )
@@ -1703,7 +1732,7 @@ async def home(c):
     uid = c.from_user.id
     clear_user_states(uid)
 
-    await c.message.edit_text(
+    await safe_edit(c,
         "🏠 Bosh menyu",
         reply_markup=main_menu()
     )
