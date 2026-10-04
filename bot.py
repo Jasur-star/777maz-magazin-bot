@@ -33,7 +33,7 @@ async def supabase_request(method, path, payload=None):
         "apikey": SUPABASE_SECRET_KEY,
         "Authorization": f"Bearer {SUPABASE_SECRET_KEY}",
         "Content-Type": "application/json",
-        "Prefer": "return=representation,resolution=merge-duplicates",
+        "Prefer": "return=representation",
     }
 
     async with aiohttp.ClientSession() as session:
@@ -54,16 +54,15 @@ async def supabase_request(method, path, payload=None):
                 return []
 
             return await response.json()
-# Bitta va yagona admin. Oddiy foydalanuvchilarga admin menyusi umuman ko'rsatilmaydi.
+ADMIN_ID = os.getenv("ADMIN_ID", "").strip()
+# Asosiy admin ID: Render ENV bo'sh yoki noto'g'ri bo'lsa ham bot egasi taniladi.
 PRIMARY_ADMIN_ID = "8082110485"
-ADMIN_ID = PRIMARY_ADMIN_ID
 CONTACT_PHONE = os.getenv("CONTACT_PHONE", "+998 99 690 24 07")
 DEFAULT_ADDRESS = os.getenv(
     "SHOP_ADDRESS",
     "Toshkent shahar, Mirzo Ulug‘bek tumani, Mirzo Ulug‘bek ko‘chasi, 107-uy, 1-xonadon"
 )
 DEFAULT_TELEGRAM = os.getenv("SHOP_TELEGRAM", "@online08981")
-WEB_MARKET_URL = os.getenv("WEB_MARKET_URL", "https://seven77maz-magazin-bot-1.onrender.com")
 
 CATEGORIES = [
     "🥤 Ichimliklar", "🍫 Shirinliklar", "🍎 Mevalar", "🥕 Sabzavotlar",
@@ -157,7 +156,10 @@ def seed_products():
 
 def is_admin(uid):
     uid = str(uid).strip()
-    return uid == PRIMARY_ADMIN_ID
+    allowed = {PRIMARY_ADMIN_ID}
+    if ADMIN_ID:
+        allowed.add(ADMIN_ID)
+    return uid in allowed
 
 
 def clear_user_states(uid):
@@ -188,152 +190,12 @@ def profile_save(uid, name=None, phone=None, address=None, lat=None, lon=None):
     con.commit(); con.close()
 
 
-
-# =========================
-# KEYBOARDS / UI HELPERS
-# =========================
-
-def main_menu(uid=None):
-    rows = [
-        [KeyboardButton(text="🛍 Mahsulotlar"), KeyboardButton(text="🛒 Savat")],
-        [KeyboardButton(text="🌐 Web Market")],
-        [KeyboardButton(text="☎️ Biz bilan aloqa"), KeyboardButton(text="📍 Do‘kon lokatsiyasi")],
-    ]
-    if uid is not None and is_admin(uid):
-        rows.append([KeyboardButton(text="⚙️ Admin panel")])
-    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
-
-
-def admin_keyboard():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="➕ Mahsulot qo‘shish", callback_data="admin_add")],
-        [InlineKeyboardButton(text="🏷️ Chegirmali mahsulot", callback_data="admin_add_discount")],
-        [InlineKeyboardButton(text="🆕 Yangi mahsulot", callback_data="admin_add_new")],
-        [InlineKeyboardButton(text="📋 Mahsulotlar", callback_data="admin_list")],
-        [InlineKeyboardButton(text="🗑 Mahsulot o‘chirish", callback_data="admin_delete")],
-        [InlineKeyboardButton(text="⚙️ Sozlamalar", callback_data="admin_settings")],
-        [InlineKeyboardButton(text="🏠 Bosh menyu", callback_data="home")],
-    ])
-
-
-def admin_cat_keyboard():
-    rows=[]
-    for i,cat in enumerate(CATEGORIES):
-        rows.append([InlineKeyboardButton(text=cat, callback_data=f"admin_cat:{i}")])
-    rows.append([InlineKeyboardButton(text="❌ Bekor qilish", callback_data="admin_cancel")])
-    return InlineKeyboardMarkup(inline_keyboard=rows)
-
-
-def catalog_keyboard():
-    rows=[]
-    for i,cat in enumerate(CATEGORIES):
-        rows.append([InlineKeyboardButton(text=cat, callback_data=f"category:{i}")])
-    rows += [
-        [InlineKeyboardButton(text="🏷️ Chegirmalar", callback_data="discounts"),
-         InlineKeyboardButton(text="🆕 Yangilar", callback_data="new_products")],
-        [InlineKeyboardButton(text="🔎 Qidirish", callback_data="search")],
-        [InlineKeyboardButton(text="🏠 Bosh menyu", callback_data="home")],
-    ]
-    return InlineKeyboardMarkup(inline_keyboard=rows)
-
-
-def product_rows(rows, back="home"):
-    kb=[]
-    for row in rows:
-        pid,name,price,old,disc,new = row
-        label=f"{name} — {price:,} so'm"
-        if disc and old:
-            label=f"🏷️ {label}"
-        if new:
-            label=f"🆕 {label}"
-        kb.append([InlineKeyboardButton(text=label[:64], callback_data=f"product:{pid}")])
-    if back == "products":
-        kb.append([InlineKeyboardButton(text="⬅️ Katalog", callback_data="products")])
-    else:
-        kb.append([InlineKeyboardButton(text="🏠 Bosh menyu", callback_data="home")])
-    return InlineKeyboardMarkup(inline_keyboard=kb)
-
-
-def back_home():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🏠 Bosh menyu", callback_data="home")]
-    ])
-
-
-def phone_keyboard():
-    return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text="📞 Telefon raqamimni yuborish", request_contact=True)],
-                  [KeyboardButton(text="❌ Bekor qilish")]],
-        resize_keyboard=True,
-        one_time_keyboard=True,
-    )
-
-
-def location_keyboard():
-    return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text="📍 Lokatsiyamni yuborish", request_location=True)],
-                  [KeyboardButton(text="❌ Bekor qilish")]],
-        resize_keyboard=True,
-        one_time_keyboard=True,
-    )
-
-
-def payment_keyboard():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💳 Karta orqali", callback_data="pay:card")],
-        [InlineKeyboardButton(text="💵 Naqd pul", callback_data="pay:cash")],
-        [InlineKeyboardButton(text="🏪 Joyida to‘lov", callback_data="pay:onsite")],
-        [InlineKeyboardButton(text="❌ Bekor qilish", callback_data="cancel_order")],
-    ])
-
-
-def confirm_keyboard():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Tasdiqlash", callback_data="confirm_order")],
-        [InlineKeyboardButton(text="❌ Bekor qilish", callback_data="cancel_order")],
-    ])
-
-
-ADMIN_TARGET_ID = int(PRIMARY_ADMIN_ID)
-
-# Telegram ba'zan bir xil webhook update'ni qayta yuborishi mumkin.
-# Shu himoya mahsulot qo'shish kabi bir martalik amallarni ikki marta bajarilishidan saqlaydi.
-_processed_updates = set()
-
-
-def remember_update(update_id):
-    if update_id is None:
-        return True
-    if update_id in _processed_updates:
-        return False
-    _processed_updates.add(update_id)
-    if len(_processed_updates) > 2000:
-        # Eski update ID'larni cheklab turamiz.
-        for x in list(_processed_updates)[:500]:
-            _processed_updates.discard(x)
-    return True
-
-
-async def supabase_product_by_id(pid):
-    if not SUPABASE_URL or not SUPABASE_SECRET_KEY:
-        return None
-    try:
-        rows = await supabase_request(
-            "GET",
-            f"products?id=eq.{int(pid)}&select=id,name,price,category,image_file_id,old_price,is_discount,is_new"
-        )
-        return rows[0] if rows else None
-    except Exception as e:
-        print("Supabase product lookup error:", repr(e))
-        return None
-
-
 @dp.message(CommandStart())
 async def start(m: Message):
     await m.answer(
         "👋 777MAZ Marketga xush kelibsiz!\n\n"
         "🛍 Mahsulotlarni ko‘rish va buyurtma berish uchun quyidagi tugmalardan foydalaning.",
-        reply_markup=main_menu(m.from_user.id)
+        reply_markup=main_menu()
     )
 
 
@@ -437,7 +299,7 @@ async def admin_photo(m: Message):
 
     if SUPABASE_URL and SUPABASE_SECRET_KEY:
         try:
-            await supabase_request("POST", "products?on_conflict=id", {
+            await supabase_request("POST", "products", {
                 "id": pid,
                 "name": s["name"],
                 "price": s["price"],
@@ -708,8 +570,8 @@ async def confirm(c):
         created,s["payment"],s.get("lat"),s.get("lon")))
     oid=cur.lastrowid; cur.execute("DELETE FROM cart WHERE user_id=?", (uid,)); con.commit(); con.close()
     profile_save(uid,s["name"],s["phone"],s["address"],s.get("lat"),s.get("lon")); order_states.pop(uid,None)
-    await c.message.answer(f"✅ Buyurtma №{oid} qabul qilindi!\n💰 {s['total']:,} so‘m",reply_markup=main_menu(uid))
-    if ADMIN_TARGET_ID:
+    await c.message.answer(f"✅ Buyurtma №{oid} qabul qilindi!\n💰 {s['total']:,} so‘m",reply_markup=main_menu())
+    if ADMIN_ID:
         msg=f"""🔔 YANGI BUYURTMA №{oid}
 
 👤 {s['name']}
@@ -720,8 +582,8 @@ async def confirm(c):
 🛍 {s['items']}💰 Jami: {s['total']:,} so‘m
 🕐 {created}"""
         try:
-            await bot.send_message(ADMIN_TARGET_ID,msg)
-            if s.get("lat") is not None: await bot.send_location(ADMIN_TARGET_ID,s["lat"],s["lon"])
+            await bot.send_message(int(ADMIN_ID),msg)
+            if s.get("lat") is not None: await bot.send_location(int(ADMIN_ID),s["lat"],s["lon"])
         except Exception as e: print("Admin xabari xatosi:",e)
     await c.answer()
 
@@ -730,7 +592,7 @@ async def confirm(c):
 async def cancel(c):
     order_states.pop(c.from_user.id,None)
     await c.message.answer("❌ Bekor qilindi.",reply_markup=ReplyKeyboardRemove())
-    await c.message.answer("🏠 Bosh menyu",reply_markup=main_menu(c.from_user.id)); await c.answer()
+    await c.message.answer("🏠 Bosh menyu",reply_markup=main_menu()); await c.answer()
 
 
 @dp.callback_query(F.data == "orders")
@@ -815,7 +677,7 @@ async def location_received(m: Message):
         await m.answer("✅ Lokatsiya olindi.\n📍 Endi ko‘cha, uy va xonadon manzilini yozing:",reply_markup=ReplyKeyboardRemove())
     else:
         profile_save(uid,lat=lat,lon=lon)
-        await m.answer("📍 Lokatsiya saqlandi.",reply_markup=main_menu(m.from_user.id))
+        await m.answer("📍 Lokatsiya saqlandi.",reply_markup=main_menu())
 
 
 @dp.message(F.contact)
@@ -827,7 +689,7 @@ async def contact_received(m: Message):
         await m.answer("📍 Endi lokatsiyangizni yuboring:",reply_markup=location_keyboard())
     else:
         profile_save(uid,phone=m.contact.phone_number)
-        await m.answer("✅ Telefon saqlandi.",reply_markup=main_menu(m.from_user.id))
+        await m.answer("✅ Telefon saqlandi.",reply_markup=main_menu())
 
 
 @dp.message(F.text)
@@ -835,49 +697,13 @@ async def texts(m: Message):
     uid=m.from_user.id; text=m.text.strip()
     if text=="❌ Bekor qilish":
         order_states.pop(uid,None); admin_states.pop(uid,None)
-        await m.answer("❌ Bekor qilindi.",reply_markup=ReplyKeyboardRemove());
-        await m.answer("🏠 Bosh menyu",reply_markup=main_menu(uid)); return
-
-    # Reply-keyboard bosh menyu tugmalari. Admin tugmasi faqat admin uchun ishlaydi.
-    if text=="🛍 Mahsulotlar":
-        clear_user_states(uid)
-        await m.answer("🛍 KATALOG\n\nKategoriyani tanlang:",reply_markup=catalog_keyboard()); return
-    if text=="🛒 Savat":
-        clear_user_states(uid)
-        con=db(); rows=con.execute("""SELECT p.name,p.price,ca.quantity FROM cart ca JOIN products p ON p.id=ca.product_id WHERE ca.user_id=?""",(uid,)).fetchall(); con.close()
-        if not rows:
-            await m.answer("🛒 Savat bo‘sh.",reply_markup=main_menu(uid)); return
-        total=sum(p*q for _,p,q in rows)
-        body="🛒 SAVAT\n\n"+"".join(f"• {n} — {q} × {p:,} = {p*q:,} so‘m\n" for n,p,q in rows)+f"\n💰 Jami: {total:,} so‘m"
-        await m.answer(body,reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="📝 Buyurtma",callback_data="order")],[InlineKeyboardButton(text="🛍 Xaridni davom ettirish",callback_data="products")],[InlineKeyboardButton(text="🏠 Bosh menyu",callback_data="home")]])); return
-    if text=="☎️ Biz bilan aloqa":
-        phone=setting("contact_phone",CONTACT_PHONE); addr=setting("shop_address",DEFAULT_ADDRESS); tg=setting("telegram",DEFAULT_TELEGRAM)
-        map_url="https://www.google.com/maps/search/?api=1&query="+quote(addr)
-        await m.answer(f"☎️ BIZ BILAN ALOQA\n\n📞 Telefon: {phone}\n💬 Telegram: {tg}\n📍 Manzil: {addr}",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="📞 Telefon",callback_data="show_phone")],[InlineKeyboardButton(text="💬 Telegram",url="https://t.me/online08981")],[InlineKeyboardButton(text="📍 Xaritada ko‘rish",url=map_url)],[InlineKeyboardButton(text="🏠 Bosh menyu",callback_data="home")]])); return
-    if text=="📍 Do‘kon lokatsiyasi":
-        addr=setting("shop_address",DEFAULT_ADDRESS)
-        map_url="https://www.google.com/maps/search/?api=1&query="+quote(addr)
-        await m.answer(f"📍 DO‘KON MANZILI\n\n{addr}",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🗺 Xaritada ochish",url=map_url)],[InlineKeyboardButton(text="🏠 Bosh menyu",callback_data="home")]])); return
-    if text=="🌐 Web Market":
-        await m.answer(
-            "🛍 777MAZ Web Market",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                InlineKeyboardButton(text="🌐 Web Marketni ochish", url=WEB_MARKET_URL)
-            ]])
-        )
-        return
-
-    if text=="⚙️ Admin panel":
-        if not is_admin(uid):
-            return
-        clear_user_states(uid)
-        await m.answer("⚙️ ADMIN PANEL",reply_markup=admin_keyboard()); return
+        await m.answer("❌ Bekor qilindi.",reply_markup=ReplyKeyboardRemove()); return
 
     if uid in search_states:
         search_states.discard(uid); con=db()
         rows=con.execute("""SELECT id,name,price,old_price,is_discount,is_new FROM products
             WHERE name LIKE ? ORDER BY id DESC LIMIT 30""",(f"%{text}%",)).fetchall(); con.close()
-        await m.answer("🔎 Natijalar:",reply_markup=product_rows(rows,"home") if rows else main_menu(uid)); return
+        await m.answer("🔎 Natijalar:",reply_markup=product_rows(rows,"home") if rows else main_menu()); return
 
     if is_admin(uid) and uid in admin_states:
         s=admin_states[uid]
@@ -914,7 +740,7 @@ async def home(c):
 
     await c.message.edit_text(
         "🏠 Bosh menyu",
-        reply_markup=main_menu(uid)
+        reply_markup=main_menu()
     )
     await c.answer("Bosh menyu")
 
@@ -932,32 +758,24 @@ async def web_index(request):
 
 
 async def api_products(request):
-    # Web Market barcha manbalardagi mahsulotlarni birlashtiradi.
-    # SQLite — botning asosiy manbasi; Supabase esa qo‘shimcha/rasmli mahsulotlarni saqlaydi.
-    merged = {}
     if SUPABASE_URL and SUPABASE_SECRET_KEY:
         try:
-            remote = await supabase_request(
+            rows = await supabase_request(
                 "GET",
                 "products?select=id,name,price,category,image_file_id,old_price,is_discount,is_new&order=id.desc"
             )
-            if remote:
-                for p in remote:
-                    merged[int(p["id"])] = p
+            if rows is not None:
+                return web.json_response({"products": rows})
         except Exception as e:
-            print("Supabase products error:", repr(e))
+            print("Supabase products error:", e)
 
     con = db()
-    local = con.execute("""
+    rows = con.execute("""
         SELECT id,name,price,category,image_file_id,old_price,is_discount,is_new
         FROM products ORDER BY id DESC
     """).fetchall()
     con.close()
-    for r in local:
-        merged[int(r[0])] = product_dict(r)
-
-    products = sorted(merged.values(), key=lambda x: int(x["id"]), reverse=True)
-    return web.json_response({"products": products})
+    return web.json_response({"products": [product_dict(r) for r in rows]})
 
 async def api_product_image(request):
     file_id = request.query.get("file_id", "").strip()
@@ -1004,10 +822,6 @@ async def api_order(request):
             r=con.execute("SELECT name,price FROM products WHERE id=?",(pid,)).fetchone()
             if r:
                 valid.append((r[0],r[1],qty)); total += r[1]*qty
-            else:
-                remote = await supabase_product_by_id(pid)
-                if remote:
-                    valid.append((remote["name"], int(remote["price"]), qty)); total += int(remote["price"])*qty
         if not valid:
             con.close(); return web.json_response({"ok":False,"error":"Mahsulot topilmadi."},status=400)
 
@@ -1019,7 +833,7 @@ async def api_order(request):
             (0,name,phone,address,items_text,total,"Yangi",created,payment,lat,lon))
         oid=cur.lastrowid; con.commit(); con.close()
 
-        if ADMIN_TARGET_ID:
+        if ADMIN_ID:
             msg=f"""🌐 WEB MARKETDAN YANGI BUYURTMA №{oid}
 
 👤 {name}
@@ -1030,9 +844,9 @@ async def api_order(request):
 🛍 {items_text}💰 Jami: {total:,} so‘m
 🕐 {created}"""
             try:
-                await bot.send_message(ADMIN_TARGET_ID,msg)
+                await bot.send_message(int(ADMIN_ID),msg)
                 if lat is not None and lon is not None:
-                    await bot.send_location(ADMIN_TARGET_ID,float(lat),float(lon))
+                    await bot.send_location(int(ADMIN_ID),float(lat),float(lon))
             except Exception as e: print("Web order admin xabari:",e)
 
         return web.json_response({"ok":True,"order_id":oid,"total":total})
@@ -1046,9 +860,6 @@ async def webhook(request):
         data = await request.json()
         update_id = data.get("update_id")
         print(f"Telegram webhook update received: {update_id}")
-        if not remember_update(update_id):
-            print(f"Duplicate update ignored: {update_id}")
-            return web.Response(text="OK")
 
         update = Update.model_validate(data, context={"bot": bot})
         await dp.feed_update(bot, update)
@@ -1117,73 +928,74 @@ async def ensure_webhook():
     return url
 
 
-async def webhook_keeper(app):
-    while True:
-        try:
-            await ensure_webhook()
-        except Exception as e:
-            print("Webhook keeper error:", repr(e))
-        await asyncio.sleep(10)
-
 
 async def sync_products():
-    """SQLite dagi barcha mahsulotlarni Supabase bilan yangilab turadi."""
+    """Admin paneldagi SQLite va Web Marketdagi Supabase mahsulotlarini birlashtiradi."""
     if not SUPABASE_URL or not SUPABASE_SECRET_KEY:
-        print("Supabase ENV topilmadi")
+        print("Supabase sync skipped: env yo'q")
         return
 
     try:
         con = db()
-        rows = con.execute("""
+        local_rows = con.execute("""
             SELECT id,name,price,category,image_file_id,old_price,is_discount,is_new
-            FROM products
-            ORDER BY id
+            FROM products ORDER BY id
         """).fetchall()
         con.close()
 
-        if not rows:
-            print("Sync: SQLite da mahsulot yo'q")
-            return
+        remote = await supabase_request(
+            "GET",
+            "products?select=id,name,price,category,image_file_id,old_price,is_discount,is_new&order=id"
+        ) or []
+        remote_ids = {int(r["id"]) for r in remote if r.get("id") is not None}
 
-        products = []
-        for r in rows:
-            products.append({
-                "id": r[0],
-                "name": r[1],
-                "price": r[2],
-                "category": r[3],
-                "image_file_id": r[4] or "",
-                "old_price": r[5] or 0,
-                "is_discount": bool(r[6]),
-                "is_new": bool(r[7])
-            })
+        # Admin panelda bor, Supabase'da yo'q mahsulotlarni Web Marketga qo'shamiz.
+        missing = []
+        for r in local_rows:
+            if r[0] not in remote_ids:
+                missing.append({
+                    "id": r[0], "name": r[1], "price": r[2], "category": r[3] or "",
+                    "image_file_id": r[4] or "", "old_price": r[5] or 0,
+                    "is_discount": bool(r[6]), "is_new": bool(r[7])
+                })
+        if missing:
+            await supabase_request("POST", "products", missing)
+            print(f"SQLite -> Supabase: {len(missing)} ta yangi mahsulot")
 
-        # Barcha lokal mahsulotlarni ID bo'yicha Supabase ga upsert qiladi.
-        await supabase_request("POST", "products?on_conflict=id", products)
-        print(f"Supabase sync: {len(products)} ta mahsulot yangilandi")
+        # Web Marketdagi mahsulotlarni local DBga ham olib kelamiz.
+        if remote:
+            con = db()
+            for r in remote:
+                con.execute("""
+                    INSERT INTO products(id,name,price,category,image_file_id,old_price,is_discount,is_new)
+                    VALUES(?,?,?,?,?,?,?,?)
+                    ON CONFLICT(id) DO UPDATE SET
+                        name=excluded.name, price=excluded.price, category=excluded.category,
+                        image_file_id=excluded.image_file_id, old_price=excluded.old_price,
+                        is_discount=excluded.is_discount, is_new=excluded.is_new
+                """, (
+                    r.get("id"), r.get("name", ""), int(r.get("price", 0)),
+                    r.get("category", ""), r.get("image_file_id", ""),
+                    int(r.get("old_price", 0) or 0), int(bool(r.get("is_discount"))), int(bool(r.get("is_new")))
+                ))
+            con.commit(); con.close()
 
+        print(f"Web Market sync OK: local={len(local_rows)}, remote={len(remote)}")
     except Exception as e:
         print("Supabase sync error:", repr(e))
+
+
 async def on_startup(app):
     init_db()
-    print("ADMIN_TARGET_ID:", ADMIN_TARGET_ID)
+    print("ADMIN_ID:", repr(ADMIN_ID))
     seed_products()
     await sync_products()
     await ensure_webhook()
-    app["webhook_keeper_task"] = asyncio.create_task(webhook_keeper(app))
-    print("Webhook keeper started")
+    print("Web Market products sync completed")
 
 
 async def on_cleanup(app):
-    task = app.get("webhook_keeper_task")
-    if task:
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
-    # Muhim: Render restart/sleep paytida webhookni o‘chirib yubormaymiz.
-    # Shunda Telegram keyingi ishga tushishda shu URL'ga update yuborishda davom etadi.
+    # Webhookni cleanup paytida o‘chirmaymiz.
     await bot.session.close()
 
 
