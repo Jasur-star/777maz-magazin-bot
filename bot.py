@@ -49,10 +49,49 @@ CATEGORIES = [
     "🍫 Shirinliklar",
     "🍎 Mevalar",
     "🥕 Sabzavotlar",
+    "🫘 Dukkakli mahsulotlar",
     "👶 Bolalar ovqati",
     "🍳 Oshxona mahsulotlari",
     "🧴 Gellar va shampunlar"
 ]
+
+WEIGHT_CATEGORIES = {
+    "🍎 Mevalar",
+    "🥕 Sabzavotlar",
+    "🫘 Dukkakli mahsulotlar",
+}
+
+def is_weight_product(category):
+    return category in WEIGHT_CATEGORIES
+
+def weight_price(price_per_kg, grams):
+    return (price_per_kg * grams) // 1000
+
+def weight_keyboard(pid, grams, fav=False):
+    grams = max(100, int(grams))
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="➖ 100 g", callback_data=f"weight:{pid}:{grams-100}"),
+            InlineKeyboardButton(text=f"⚖️ {grams} g", callback_data=f"weight:{pid}:{grams}"),
+            InlineKeyboardButton(text="➕ 100 g", callback_data=f"weight:{pid}:{grams+100}")
+        ],
+        [
+            InlineKeyboardButton(
+                text=f"🛒 {grams} g ni savatga qo‘shish",
+                callback_data=f"addw:{pid}:{grams}"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="💔 Sevimlidan olib tashlash" if fav else "⭐ Sevimliga",
+                callback_data=f"fav:{pid}"
+            )
+        ],
+        [
+            InlineKeyboardButton(text="🛒 Savat", callback_data="cart"),
+            InlineKeyboardButton(text="🏠 Bosh menyu", callback_data="home")
+        ]
+    ])
 
 order_states = {}
 admin_states = {}
@@ -986,11 +1025,19 @@ async def product(c):
 
     name, price, cat, img, old, disc, new = p
 
-    text = (
-        f"🛍 {name}\n\n"
-        f"💰 {price:,} so'm\n"
-        f"📂 {cat}"
-    )
+    text = f"🛍 {name}\n\n"
+
+    if is_weight_product(cat):
+        grams = 100
+        text += (
+            f"💰 {price:,} so'm / kg\n"
+            f"⚖️ Miqdor: {grams} g\n"
+            f"💵 Jami: {weight_price(price, grams):,} so'm\n"
+        )
+    else:
+        text += f"💰 {price:,} so'm\n"
+
+    text += f"📂 {cat}"
 
     if disc and old:
         text += f"\n🏷️ Eski narx: {old:,} so'm"
@@ -998,20 +1045,23 @@ async def product(c):
     if new:
         text += "\n🆕 Yangi mahsulot"
 
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text="🛒 Savatga qo‘shish",
-            callback_data=f"add:{pid}"
-        )],
-        [InlineKeyboardButton(
-            text="💔 Sevimlidan olib tashlash" if fav else "⭐ Sevimliga",
-            callback_data=f"fav:{pid}"
-        )],
-        [
-            InlineKeyboardButton(text="🛒 Savat", callback_data="cart"),
-            InlineKeyboardButton(text="🏠 Bosh menyu", callback_data="home")
-        ]
-    ])
+    if is_weight_product(cat):
+        kb = weight_keyboard(pid, 100, bool(fav))
+    else:
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(
+                text="🛒 Savatga qo‘shish",
+                callback_data=f"add:{pid}"
+            )],
+            [InlineKeyboardButton(
+                text="💔 Sevimlidan olib tashlash" if fav else "⭐ Sevimliga",
+                callback_data=f"fav:{pid}"
+            )],
+            [
+                InlineKeyboardButton(text="🛒 Savat", callback_data="cart"),
+                InlineKeyboardButton(text="🏠 Bosh menyu", callback_data="home")
+            ]
+        ])
 
     if img:
         await c.message.answer_photo(
@@ -1026,6 +1076,109 @@ async def product(c):
         )
 
     await c.answer()
+
+
+@dp.callback_query(F.data.startswith("weight:"))
+async def weight_select(c):
+    try:
+        _, pid_s, grams_s = c.data.split(":")
+        pid = int(pid_s)
+        grams = max(100, int(grams_s))
+    except (ValueError, IndexError):
+        await c.answer("Vazn xatosi.", show_alert=True)
+        return
+
+    con = db()
+    p = con.execute(
+        """SELECT name,price,category,image_file_id,old_price,is_discount,is_new
+           FROM products WHERE id=?""",
+        (pid,)
+    ).fetchone()
+    fav = con.execute(
+        "SELECT 1 FROM favorites WHERE user_id=? AND product_id=?",
+        (c.from_user.id, pid)
+    ).fetchone()
+    con.close()
+
+    if not p:
+        await c.answer("Mahsulot topilmadi", show_alert=True)
+        return
+
+    name, price, cat, img, old, disc, new = p
+
+    if not is_weight_product(cat):
+        await c.answer("Bu mahsulot vazn bilan sotilmaydi.", show_alert=True)
+        return
+
+    text = (
+        f"🛍 {name}\n\n"
+        f"💰 {price:,} so'm / kg\n"
+        f"⚖️ Miqdor: {grams} g\n"
+        f"💵 Jami: {weight_price(price, grams):,} so'm\n"
+        f"📂 {cat}"
+    )
+
+    if disc and old:
+        text += f"\n🏷️ Eski narx: {old:,} so'm"
+    if new:
+        text += "\n🆕 Yangi mahsulot"
+
+    kb = weight_keyboard(pid, grams, bool(fav))
+
+    try:
+        if getattr(c.message, "photo", None):
+            await c.message.edit_caption(caption=text, reply_markup=kb)
+        else:
+            await c.message.edit_text(text, reply_markup=kb)
+    except Exception as e:
+        print("Weight edit error:", repr(e))
+
+    await c.answer()
+
+
+@dp.callback_query(F.data.startswith("addw:"))
+async def add_weight(c):
+    try:
+        _, pid_s, grams_s = c.data.split(":")
+        pid = int(pid_s)
+        grams = max(100, int(grams_s))
+    except (ValueError, IndexError):
+        await c.answer("Vazn xatosi.", show_alert=True)
+        return
+
+    uid = c.from_user.id
+    con = db()
+
+    p = con.execute(
+        "SELECT name,price,category FROM products WHERE id=?",
+        (pid,)
+    ).fetchone()
+
+    if not p:
+        con.close()
+        await c.answer("Topilmadi", show_alert=True)
+        return
+
+    name, price, cat = p
+
+    if not is_weight_product(cat):
+        con.close()
+        await c.answer("Bu mahsulot vazn bilan sotilmaydi.", show_alert=True)
+        return
+
+    con.execute(
+        """INSERT INTO cart(user_id,product_id,quantity)
+           VALUES(?,?,?)
+           ON CONFLICT(user_id,product_id)
+           DO UPDATE SET quantity=quantity+excluded.quantity""",
+        (uid, pid, grams)
+    )
+    con.commit()
+    con.close()
+
+    await c.answer(
+        f"✅ {name}: {grams} g — {weight_price(price, grams):,} so'm savatga qo‘shildi"
+    )
 
 
 # =========================
@@ -1128,7 +1281,7 @@ async def cart(c):
     con = db()
 
     rows = con.execute(
-        """SELECT p.name,p.price,ca.quantity
+        """SELECT p.name,p.price,p.category,ca.quantity
            FROM cart ca
            JOIN products p ON p.id=ca.product_id
            WHERE ca.user_id=?""",
@@ -1145,13 +1298,23 @@ async def cart(c):
         await c.answer()
         return
 
-    total = sum(p * q for _, p, q in rows)
+    total = 0
+    parts = []
 
-    text = "🛒 SAVAT\n\n" + "".join(
-        f"• {n} — {q} × {p:,} = {p*q:,} so‘m\n"
-        for n, p, q in rows
-    )
+    for name, price, category, quantity in rows:
+        if is_weight_product(category):
+            line_total = weight_price(price, quantity)
+            parts.append(
+                f"• {name} — {quantity} g × {price:,} so'm/kg = {line_total:,} so'm\n"
+            )
+        else:
+            line_total = price * quantity
+            parts.append(
+                f"• {name} — {quantity} × {price:,} = {line_total:,} so'm\n"
+            )
+        total += line_total
 
+    text = "🛒 SAVAT\n\n" + "".join(parts)
     text += f"\n💰 Jami: {total:,} so‘m"
 
     await safe_edit(c,
@@ -1241,7 +1404,7 @@ async def preview(uid, m):
 
     con = db()
     rows = con.execute(
-        """SELECT p.name,p.price,ca.quantity
+        """SELECT p.name,p.price,p.category,ca.quantity
            FROM cart ca
            JOIN products p ON p.id=ca.product_id
            WHERE ca.user_id=?""",
@@ -1249,12 +1412,23 @@ async def preview(uid, m):
     ).fetchall()
     con.close()
 
-    total = sum(p * q for _, p, q in rows)
+    total = 0
+    item_lines = []
 
-    s["items"] = "".join(
-        f"• {n} — {q} dona — {p*q:,} so‘m\n"
-        for n, p, q in rows
-    )
+    for n, p, category, q in rows:
+        if is_weight_product(category):
+            line_total = weight_price(p, q)
+            item_lines.append(
+                f"• {n} — {q} g — {line_total:,} so‘m\n"
+            )
+        else:
+            line_total = p * q
+            item_lines.append(
+                f"• {n} — {q} dona — {line_total:,} so‘m\n"
+            )
+        total += line_total
+
+    s["items"] = "".join(item_lines)
     s["total"] = total
 
     loc = ""
