@@ -54,7 +54,9 @@ async def supabase_request(method, path, payload=None):
                 return []
 
             return await response.json()
-ADMIN_ID = os.getenv("ADMIN_ID", "8082110485").strip()
+ADMIN_ID = os.getenv("ADMIN_ID", "").strip()
+# Asosiy admin ID: Render ENV bo'sh yoki noto'g'ri bo'lsa ham bot egasi taniladi.
+PRIMARY_ADMIN_ID = "8082110485"
 CONTACT_PHONE = os.getenv("CONTACT_PHONE", "+998 99 690 24 07")
 DEFAULT_ADDRESS = os.getenv(
     "SHOP_ADDRESS",
@@ -153,7 +155,11 @@ def seed_products():
 
 
 def is_admin(uid):
-    return bool(ADMIN_ID) and str(uid).strip() == ADMIN_ID
+    uid = str(uid).strip()
+    allowed = {PRIMARY_ADMIN_ID}
+    if ADMIN_ID:
+        allowed.add(ADMIN_ID)
+    return uid in allowed
 
 
 def clear_user_states(uid):
@@ -978,6 +984,7 @@ async def sync_products():
 async def on_startup(app):
     init_db()
     print("ADMIN_ID:", repr(ADMIN_ID))
+    print("ADMIN_ID:", repr(ADMIN_ID))
     seed_products()
     await sync_products()
     await ensure_webhook()
@@ -1004,6 +1011,7 @@ def create_app():
     app.router.add_get("/",web_index)
     app.router.add_get("/health",health)
     app.router.add_get("/api/products",api_products)
+    app.router.add_get("/api/product-image", api_product_image)
     app.router.add_get("/api/product-image", api_product_image)
     app.router.add_get("/api/settings",api_settings)
     app.router.add_post("/api/order",api_order)
