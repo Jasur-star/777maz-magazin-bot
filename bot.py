@@ -310,24 +310,20 @@ def profile_save(uid, name=None, phone=None, address=None, lat=None, lon=None):
 # =========================
 
 def main_menu():
+    # Asosiy menyu: faqat 3 ta bo‘lim
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🌐 Web Market", url=WEB_MARKET_URL)],
-        [
-            InlineKeyboardButton(text="🛍 Mahsulotlar", callback_data="products"),
-            InlineKeyboardButton(text="🛒 Savat", callback_data="cart")
-        ],
-        [
-            InlineKeyboardButton(text="⭐ Sevimlilar", callback_data="favorites"),
-            InlineKeyboardButton(text="📦 Buyurtmalarim", callback_data="orders")
-        ],
-        [
-            InlineKeyboardButton(text="🔎 Qidirish", callback_data="search"),
-            InlineKeyboardButton(text="💳 To‘lov", callback_data="payment_info")
-        ],
-        [
-            InlineKeyboardButton(text="☎️ Biz bilan aloqa", callback_data="contact"),
-            InlineKeyboardButton(text="👤 Profil", callback_data="profile")
-        ]
+        [InlineKeyboardButton(
+            text="🛍 Mahsulotlar bo‘limi",
+            callback_data="products"
+        )],
+        [InlineKeyboardButton(
+            text="🛒 Savat",
+            callback_data="cart"
+        )],
+        [InlineKeyboardButton(
+            text="☎️ Biz bilan aloqa",
+            callback_data="contact"
+        )]
     ])
 
 
