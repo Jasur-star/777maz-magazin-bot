@@ -33,7 +33,7 @@ async def supabase_request(method, path, payload=None):
         "apikey": SUPABASE_SECRET_KEY,
         "Authorization": f"Bearer {SUPABASE_SECRET_KEY}",
         "Content-Type": "application/json",
-        "Prefer": "return=representation",
+        "Prefer": "return=representation,resolution=merge-duplicates",
     }
 
     async with aiohttp.ClientSession() as session:
@@ -938,19 +938,12 @@ async def webhook_keeper(app):
 
 
 async def sync_products():
+    """SQLite dagi barcha mahsulotlarni Supabase bilan yangilab turadi."""
     if not SUPABASE_URL or not SUPABASE_SECRET_KEY:
+        print("Supabase ENV topilmadi")
         return
 
     try:
-        remote = await supabase_request(
-            "GET",
-            "products?select=id,name,price,category,image_file_id,old_price,is_discount,is_new&order=id"
-        )
-
-        if remote:
-            print("Supabase products already exist")
-            return
-
         con = db()
         rows = con.execute("""
             SELECT id,name,price,category,image_file_id,old_price,is_discount,is_new
@@ -960,10 +953,10 @@ async def sync_products():
         con.close()
 
         if not rows:
+            print("Sync: SQLite da mahsulot yo'q")
             return
 
         products = []
-
         for r in rows:
             products.append({
                 "id": r[0],
@@ -976,14 +969,14 @@ async def sync_products():
                 "is_new": bool(r[7])
             })
 
-        await supabase_request("POST", "products", products)
-        print(f"Supabase sync: {len(products)} ta mahsulot yuklandi")
+        # Barcha lokal mahsulotlarni ID bo'yicha Supabase ga upsert qiladi.
+        await supabase_request("POST", "products?on_conflict=id", products)
+        print(f"Supabase sync: {len(products)} ta mahsulot yangilandi")
 
     except Exception as e:
         print("Supabase sync error:", repr(e))
 async def on_startup(app):
     init_db()
-    print("ADMIN_ID:", repr(ADMIN_ID))
     print("ADMIN_ID:", repr(ADMIN_ID))
     seed_products()
     await sync_products()
