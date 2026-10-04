@@ -36,7 +36,7 @@ button{border:0;cursor:pointer}
 .close{background:#eee;border-radius:10px;padding:7px 11px}
 .cart-line{display:flex;gap:10px;align-items:center;border-bottom:1px solid #eee;padding:10px 0}
 .cart-info{flex:1}.cart-name{font-weight:700}.cart-price{font-size:13px;color:#667085}
-.qty{display:flex;align-items:center;gap:7px}.qty button{background:#eee;border-radius:8px;padding:6px 10px}
+.qty{display:flex;align-items:center;gap:7px}.qty button{background:#eee;border-radius:8px;padding:6px 9px;font-size:13px;white-space:nowrap}
 .total{font-size:20px;font-weight:800;text-align:right;margin:15px 0}
 .form label{display:block;font-weight:700;margin:10px 0 5px}
 .form input,.form textarea,.form select{width:100%;padding:11px;border:1px solid #d0d5dd;border-radius:10px;outline:none}
@@ -129,7 +129,7 @@ let paymentMethod='';
 
 const icons={
   '🥤 Ichimliklar':'🥤','🍫 Shirinliklar':'🍫','🍎 Mevalar':'🍎',
-  '🥕 Sabzavotlar':'🥕','👶 Bolalar ovqati':'👶',
+  '🥕 Sabzavotlar':'🥕','🫘 Dukkakli mahsulotlar':'🫘','👶 Bolalar ovqati':'👶',
   '🍳 Oshxona mahsulotlari':'🍳','🧴 Gellar va shampunlar':'🧴'
 };
 
@@ -138,11 +138,31 @@ function esc(s){
 }
 function money(n){return Number(n||0).toLocaleString('uz-UZ')+' so‘m'}
 
+const WEIGHT_CATEGORIES=new Set(['🍎 Mevalar','🥕 Sabzavotlar','🫘 Dukkakli mahsulotlar']);
+function isWeightProduct(p){return WEIGHT_CATEGORIES.has(p.category)}
+function weightPrice(price,grams){return Math.floor(Number(price||0)*Number(grams||0)/1000)}
+function weightLabel(grams){
+  grams=Number(grams||0);
+  if(grams>=1000 && grams%1000===0) return (grams/1000)+' kg';
+  return grams+' g';
+}
+function normalizeWeightCart(){
+  products.forEach(p=>{
+    if(isWeightProduct(p) && cart[p.id]!=null){
+      const q=Number(cart[p.id]);
+      if(q>0 && q<100) cart[p.id]=q*100;
+      else if(q>=100) cart[p.id]=Math.floor(q/100)*100;
+    }
+  });
+  saveCart();
+}
+
 async function load(){
   try{
     const r=await fetch('/api/products',{cache:'no-store'});
     const d=await r.json();
     products=d.products||[];
+    normalizeWeightCart();
     renderCategories();
     render();
   }catch(e){
@@ -151,7 +171,7 @@ async function load(){
 }
 
 function renderCategories(){
-  const cats=['','🥤 Ichimliklar','🍫 Shirinliklar','🍎 Mevalar','🥕 Sabzavotlar','👶 Bolalar ovqati','🍳 Oshxona mahsulotlari','🧴 Gellar va shampunlar'];
+  const cats=['','🥤 Ichimliklar','🍫 Shirinliklar','🍎 Mevalar','🥕 Sabzavotlar','🫘 Dukkakli mahsulotlar','👶 Bolalar ovqati','🍳 Oshxona mahsulotlari','🧴 Gellar va shampunlar'];
   document.getElementById('categories').innerHTML=cats.map(c=>
     `<button class="${category===c?'active':''}" onclick="setCategory('${c}')">${c||'🛍 Barchasi'}</button>`
   ).join('');
@@ -171,20 +191,27 @@ function render(){
       <div class="pic">${image}</div>
       ${tag?`<div class="tag">${tag}</div>`:''}
       <div class="name">${esc(p.name)}</div>
-      ${p.old_price?`<div class="old">${money(p.old_price)}</div>`:''}
-      <div class="price">${money(p.price)}</div>
-      <button class="add" onclick="add(${p.id})">🛒 Savatga qo‘shish</button>
+      ${p.old_price?`<div class="old">${money(p.old_price)}${isWeightProduct(p)?' / kg':''}</div>`:''}
+      <div class="price">${money(p.price)}${isWeightProduct(p)?' / kg':''}</div>
+      <button class="add" onclick="add(${p.id})">${isWeightProduct(p)?'⚖️ 100 g ni savatga qo‘shish':'🛒 Savatga qo‘shish'}</button>
     </div>`;
   }).join('');
   updateCount();
 }
 
 function add(id){
-  cart[id]=(cart[id]||0)+1;
-  saveCart(); updateCount(); toast('✅ Mahsulot savatga qo‘shildi');
+  const p=products.find(x=>Number(x.id)===Number(id));
+  if(!p)return;
+  const step=isWeightProduct(p)?100:1;
+  cart[id]=(cart[id]||0)+step;
+  saveCart(); updateCount(); toast(isWeightProduct(p)?'✅ 100 g savatga qo‘shildi':'✅ Mahsulot savatga qo‘shildi');
 }
 function changeQty(id,delta){
+  const p=products.find(x=>Number(x.id)===Number(id));
+  if(!p)return;
+  const step=isWeightProduct(p)?100:1;
   cart[id]=(cart[id]||0)+delta;
+  if(isWeightProduct(p)) cart[id]=Math.floor(cart[id]/100)*100;
   if(cart[id]<=0)delete cart[id];
   saveCart(); openCart();
 }
@@ -202,11 +229,18 @@ function openCart(){
     document.querySelector('#cartModal .submit').style.display='block';
     let total=0;
     box.innerHTML=items.map(p=>{
-      const q=cart[p.id]; total+=Number(p.price)*q;
+      const q=Number(cart[p.id]);
+      const weighted=isWeightProduct(p);
+      const lineTotal=weighted?weightPrice(p.price,q):Number(p.price)*q;
+      total+=lineTotal;
+      const unitText=weighted?`${money(p.price)} / kg`:`${money(p.price)} × ${q}`;
+      const qtyText=weighted?weightLabel(q):q;
+      const minus=weighted?'− 100 g':'−';
+      const plus=weighted?'+ 100 g':'+';
       return `<div class="cart-line">
-        <div class="cart-info"><div class="cart-name">${esc(p.name)}</div><div class="cart-price">${money(p.price)} × ${q}</div></div>
+        <div class="cart-info"><div class="cart-name">${esc(p.name)}</div><div class="cart-price">${unitText} · <b>${qtyText}</b> · ${money(lineTotal)}</div></div>
         <div class="qty">
-          <button onclick="changeQty(${p.id},-1)">−</button><b>${q}</b><button onclick="changeQty(${p.id},1)">+</button>
+          <button onclick="changeQty(${p.id},-${weighted?100:1})">${minus}</button><b>${qtyText}</b><button onclick="changeQty(${p.id},${weighted?100:1})">${plus}</button>
         </div>
       </div>`;
     }).join('');
@@ -222,9 +256,14 @@ function openOrder(){
   updateOrderSummary();
 }
 function updateOrderSummary(){
-  let total=0;
-  products.filter(p=>cart[p.id]).forEach(p=>total+=Number(p.price)*cart[p.id]);
-  document.getElementById('orderSummary').innerHTML=`🛍 Mahsulotlar: ${Object.values(cart).reduce((a,b)=>a+Number(b),0)} dona<br>💰 Jami: <b>${money(total)}</b>`;
+  let total=0, lines=[];
+  products.filter(p=>cart[p.id]).forEach(p=>{
+    const q=Number(cart[p.id]);
+    const line=isWeightProduct(p)?weightPrice(p.price,q):Number(p.price)*q;
+    total+=line;
+    lines.push(`${esc(p.name)} — ${isWeightProduct(p)?weightLabel(q):q+' dona'} — ${money(line)}`);
+  });
+  document.getElementById('orderSummary').innerHTML=`🛍 <b>Buyurtma:</b><br>${lines.join('<br>')}<br><br>💰 Jami: <b>${money(total)}</b>`;
 }
 function choosePay(btn){
   document.querySelectorAll('.pay').forEach(x=>x.classList.remove('selected'));
@@ -247,7 +286,7 @@ async function sendOrder(){
   const name=document.getElementById('name').value.trim();
   const phone=document.getElementById('phone').value.trim();
   const address=document.getElementById('address').value.trim();
-  const items=products.filter(p=>cart[p.id]).map(p=>({id:p.id,quantity:cart[p.id]}));
+  const items=products.filter(p=>cart[p.id]).map(p=>isWeightProduct(p)?({id:p.id,grams:Number(cart[p.id])}):({id:p.id,quantity:Number(cart[p.id])}));
   if(!name){toast('❗ Ismni kiriting');return}
   if(!phone){toast('❗ Telefon raqamini kiriting');return}
   if(!address){toast('❗ Manzilni kiriting');return}
